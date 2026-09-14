@@ -154,9 +154,9 @@ func TestStripRetiredRouteBoundItemsUsesInspectionDigester(t *testing.T) {
 		t.Fatalf("item fingerprints = %d, want 1", len(inspection.Signals.ItemFingerprints))
 	}
 
-	updated, stats, errStrip := inspection.stripRetiredRouteBoundItemsWithStatsUsing(digester, inspection.Signals.ItemFingerprints)
+	updated, stats, errStrip := inspection.stripRetiredRouteBoundItemsWithDigester(digester, inspection.Signals.ItemFingerprints)
 	if errStrip != nil || !stats.changed() {
-		t.Fatalf("stripRetiredRouteBoundItemsWithStatsUsing() stats=%#v, err=%v", stats, errStrip)
+		t.Fatalf("stripRetiredRouteBoundItemsWithDigester() stats=%#v, err=%v", stats, errStrip)
 	}
 	if bytes.Contains(updated, []byte("rs-retired")) || !bytes.Contains(updated, []byte("continue")) || !bytes.Contains(updated, []byte("resp-current")) {
 		t.Fatalf("unexpected sanitized payload: %s", updated)

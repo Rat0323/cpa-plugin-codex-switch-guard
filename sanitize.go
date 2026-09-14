@@ -36,10 +36,6 @@ func (s sanitizeStats) changed() bool {
 	return s.ReasoningRemoved > 0 || s.CompactionRemoved > 0 || s.PreviousResponseIDRemoved
 }
 
-func inspectPayload(raw []byte) (payloadInspection, error) {
-	return inspectPayloadWithDigester(raw, processOpaqueDigester)
-}
-
 func inspectPayloadWithDigester(raw []byte, digester opaqueDigester) (payloadInspection, error) {
 	inspection := payloadInspection{Raw: raw}
 	if len(bytes.TrimSpace(raw)) == 0 {
@@ -79,10 +75,6 @@ func inspectPayloadWithDigester(raw []byte, digester opaqueDigester) (payloadIns
 	return inspection, nil
 }
 
-func routeBoundInputItem(raw json.RawMessage) (string, string, bool) {
-	return routeBoundInputItemWithDigester(raw, processOpaqueDigester)
-}
-
 func routeBoundInputItemWithDigester(raw json.RawMessage, digester opaqueDigester) (string, string, bool) {
 	var item struct {
 		Type             string          `json:"type"`
@@ -115,14 +107,9 @@ func routeBoundInputItemWithDigester(raw json.RawMessage, digester opaqueDigeste
 	return kind, digester.digest("route-bound-item-v1", kind, "canonical-item", string(raw)), true
 }
 
-// stripRouteBoundState deliberately changes only top-level Responses input
-// items. It never recursively searches for encrypted_content, because nested
-// agent messages and tool payloads are independent application data.
-func (p payloadInspection) stripRouteBoundState() ([]byte, bool, error) {
-	updated, stats, errStrip := p.stripRouteBoundStateWithStats()
-	return updated, stats.changed(), errStrip
-}
-
+// stripRouteBoundStateWithStats deliberately changes only top-level Responses
+// input items. It never recursively searches for encrypted_content, because
+// nested agent messages and tool payloads are independent application data.
 func (p payloadInspection) stripRouteBoundStateWithStats() ([]byte, sanitizeStats, error) {
 	stats := sanitizeStats{}
 	if !p.Signals.hasRouteBoundState() {
@@ -171,19 +158,11 @@ func (p payloadInspection) stripRouteBoundStateWithStats() ([]byte, sanitizeStat
 	return updated, stats, nil
 }
 
-// stripRetiredRouteBoundItems removes only top-level items already observed on
-// a foreign or unknown route. previous_response_id remains intact because it
-// belongs to the currently selected route on same-route continuations.
-func (p payloadInspection) stripRetiredRouteBoundItems(fingerprints []string) ([]byte, bool, error) {
-	updated, stats, errStrip := p.stripRetiredRouteBoundItemsWithStats(fingerprints)
-	return updated, stats.changed(), errStrip
-}
-
-func (p payloadInspection) stripRetiredRouteBoundItemsWithStats(fingerprints []string) ([]byte, sanitizeStats, error) {
-	return p.stripRetiredRouteBoundItemsWithStatsUsing(processOpaqueDigester, fingerprints)
-}
-
-func (p payloadInspection) stripRetiredRouteBoundItemsWithStatsUsing(digester opaqueDigester, fingerprints []string) ([]byte, sanitizeStats, error) {
+// stripRetiredRouteBoundItemsWithDigester removes only top-level items already
+// observed on a foreign or unknown route. previous_response_id remains intact
+// because it belongs to the currently selected route on same-route
+// continuations.
+func (p payloadInspection) stripRetiredRouteBoundItemsWithDigester(digester opaqueDigester, fingerprints []string) ([]byte, sanitizeStats, error) {
 	stats := sanitizeStats{}
 	if !p.InputArray || len(fingerprints) == 0 {
 		return p.Raw, stats, nil

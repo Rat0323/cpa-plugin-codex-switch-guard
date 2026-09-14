@@ -44,10 +44,6 @@ func newOpaqueDigestKey() []byte {
 	return fallback[:]
 }
 
-func routeFingerprintFromRequest(req pluginapi.RequestInterceptRequest) (routeFingerprint, bool) {
-	return routeFingerprintFromRequestWithDigester(req, processOpaqueDigester)
-}
-
 func routeFingerprintFromRequestWithDigester(req pluginapi.RequestInterceptRequest, digester opaqueDigester) (routeFingerprint, bool) {
 	authID := normalizeOpaqueIdentifier(metadataString(req.Metadata, "selected_auth_id"))
 	model := normalizeOpaqueIdentifier(req.Model)
@@ -60,10 +56,6 @@ func routeFingerprintFromRequestWithDigester(req pluginapi.RequestInterceptReque
 
 func (r routeFingerprint) equal(other routeFingerprint) bool {
 	return r.Digest != "" && r.Digest == other.Digest
-}
-
-func opaqueDigest(namespace string, parts ...string) string {
-	return processOpaqueDigester.digest(namespace, parts...)
 }
 
 func (d opaqueDigester) digest(namespace string, parts ...string) string {
@@ -454,10 +446,6 @@ func (s *routeStateStore) discardPending(requestID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.pending, s.pendingKey(requestID))
-}
-
-func pendingKey(requestID string) string {
-	return opaqueDigest("pending-v1", strings.TrimSpace(requestID))
 }
 
 func (s *routeStateStore) pendingKey(requestID string) string {

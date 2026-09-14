@@ -71,7 +71,7 @@ func (p *routeGuardPlugin) InterceptRequestAfterAuth(_ context.Context, req plug
 		updated, stats, errStrip = inspection.stripRouteBoundStateWithStats()
 	} else {
 		action = "strip_retired_items"
-		updated, stats, errStrip = inspection.stripRetiredRouteBoundItemsWithStatsUsing(p.digester, decision.BlockedItemFingerprints)
+		updated, stats, errStrip = inspection.stripRetiredRouteBoundItemsWithDigester(p.digester, decision.BlockedItemFingerprints)
 	}
 	if errStrip != nil || !stats.changed() {
 		p.state.discardPending(req.RequestID)
