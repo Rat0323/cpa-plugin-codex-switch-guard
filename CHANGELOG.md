@@ -6,6 +6,13 @@ matching version section verbatim.
 
 ## [Unreleased]
 
+### Fixed
+
+- Stripped retired route-bound items with the persisted digest key after a CPA
+  restart. The plugin previously re-fingerprinted items with a fresh process key,
+  so a same-route replay carrying a retired item could return HTTP 409 instead
+  of removing only that item.
+
 ## [0.4.0] - 2026-09-15
 
 ### Changed

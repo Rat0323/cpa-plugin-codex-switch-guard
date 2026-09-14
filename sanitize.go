@@ -180,6 +180,10 @@ func (p payloadInspection) stripRetiredRouteBoundItems(fingerprints []string) ([
 }
 
 func (p payloadInspection) stripRetiredRouteBoundItemsWithStats(fingerprints []string) ([]byte, sanitizeStats, error) {
+	return p.stripRetiredRouteBoundItemsWithStatsUsing(processOpaqueDigester, fingerprints)
+}
+
+func (p payloadInspection) stripRetiredRouteBoundItemsWithStatsUsing(digester opaqueDigester, fingerprints []string) ([]byte, sanitizeStats, error) {
 	stats := sanitizeStats{}
 	if !p.InputArray || len(fingerprints) == 0 {
 		return p.Raw, stats, nil
@@ -196,7 +200,7 @@ func (p payloadInspection) stripRetiredRouteBoundItemsWithStats(fingerprints []s
 
 	filtered := make([]json.RawMessage, 0, len(p.InputItems))
 	for _, item := range p.InputItems {
-		kind, fingerprint, ok := routeBoundInputItem(item)
+		kind, fingerprint, ok := routeBoundInputItemWithDigester(item, digester)
 		if ok {
 			if _, remove := blocked[fingerprint]; remove {
 				if kind == "reasoning" {

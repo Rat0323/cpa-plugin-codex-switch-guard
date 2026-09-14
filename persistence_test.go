@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"os"
@@ -47,6 +48,53 @@ func TestPluginUsesPersistedDigesterAcrossRestart(t *testing.T) {
 		if strings.Contains(string(raw), secret) {
 			t.Fatalf("plugin state contains raw secret %q: %s", secret, raw)
 		}
+	}
+}
+
+func TestPluginSanitizesRetiredItemsWithPersistedDigesterAfterRestart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "route-state.json")
+	config := []byte(fmt.Sprintf("persistence_enabled: true\nstate_file: '%s'\n", strings.ReplaceAll(path, "'", "''")))
+	persistedDigester := newOpaqueDigester([]byte("01234567890123456789012345678901"))
+	now := time.Now().UTC()
+	replay := codexRequest("replay", "session-secret", "thread-secret", "auth-b", "gpt-5.6", `{"previous_response_id":"resp-current","input":[{"type":"reasoning","id":"rs-retired","encrypted_content":"foreign"},{"type":"reasoning","id":"rs-current","encrypted_content":"current"},{"type":"message","role":"user","content":"continue"}]}`)
+	inspection, errInspect := inspectPayloadWithDigester(replay.Body, persistedDigester)
+	if errInspect != nil {
+		t.Fatal(errInspect)
+	}
+	sessionKey := sessionKeyFromRequestWithDigester(replay, inspection, persistedDigester)
+	route := routeFingerprint{Digest: persistedDigester.digest("route-v1", "auth-b", "gpt-5.6", "codex")}
+	retired := inspection.Signals.ItemFingerprints[0]
+	document := persistentStateDocument{
+		Version:   persistentStateVersion,
+		DigestKey: base64.RawStdEncoding.EncodeToString(persistedDigester.key),
+		Sequence:  2,
+		SavedAt:   now,
+		Sessions: map[string]sessionRouteState{
+			sessionKey: {
+				Route:            route,
+				HasRoute:         true,
+				Sequence:         1,
+				UpdatedAt:        now,
+				RetiredItems:     map[string]uint64{retired: 2},
+				RetiredItemRoute: map[string]routeFingerprint{retired: route},
+			},
+		},
+	}
+	if errSave := (&statePersistence{path: path}).save(document); errSave != nil {
+		t.Fatal(errSave)
+	}
+
+	plugin, errBuild := buildPlugin(config)
+	if errBuild != nil {
+		t.Fatal(errBuild)
+	}
+	response, errIntercept := plugin.InterceptRequestAfterAuth(nil, replay)
+	if errIntercept != nil || response.Terminate {
+		t.Fatalf("restarted replay response = %#v, err=%v", response, errIntercept)
+	}
+	body := string(response.Body)
+	if strings.Contains(body, "rs-retired") || !strings.Contains(body, "rs-current") || !strings.Contains(body, `"previous_response_id":"resp-current"`) {
+		t.Fatalf("retired/current route state handling = %s", body)
 	}
 }
 

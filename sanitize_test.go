@@ -143,6 +143,26 @@ func TestStripRetiredRouteBoundItemsKeepsCurrentRouteState(t *testing.T) {
 	}
 }
 
+func TestStripRetiredRouteBoundItemsUsesInspectionDigester(t *testing.T) {
+	digester := newOpaqueDigester([]byte("01234567890123456789012345678901"))
+	payload := []byte(`{"previous_response_id":"resp-current","input":[{"type":"reasoning","id":"rs-retired","encrypted_content":"foreign"},{"type":"message","role":"user","content":"continue"}]}`)
+	inspection, errInspect := inspectPayloadWithDigester(payload, digester)
+	if errInspect != nil {
+		t.Fatal(errInspect)
+	}
+	if len(inspection.Signals.ItemFingerprints) != 1 {
+		t.Fatalf("item fingerprints = %d, want 1", len(inspection.Signals.ItemFingerprints))
+	}
+
+	updated, stats, errStrip := inspection.stripRetiredRouteBoundItemsWithStatsUsing(digester, inspection.Signals.ItemFingerprints)
+	if errStrip != nil || !stats.changed() {
+		t.Fatalf("stripRetiredRouteBoundItemsWithStatsUsing() stats=%#v, err=%v", stats, errStrip)
+	}
+	if bytes.Contains(updated, []byte("rs-retired")) || !bytes.Contains(updated, []byte("continue")) || !bytes.Contains(updated, []byte("resp-current")) {
+		t.Fatalf("unexpected sanitized payload: %s", updated)
+	}
+}
+
 func TestRouteBoundItemFingerprintIsStableAcrossSerialization(t *testing.T) {
 	_, first, okFirst := routeBoundInputItem([]byte(`{"type":"reasoning","summary":[],"encrypted_content":"opaque"}`))
 	_, second, okSecond := routeBoundInputItem([]byte(`{"encrypted_content":"opaque","summary":[],"type":"reasoning"}`))
