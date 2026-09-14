@@ -12,9 +12,13 @@ import (
 const maxOpaqueIdentifierLength = 256
 
 func sessionKeyFromRequest(req pluginapi.RequestInterceptRequest, inspection payloadInspection) string {
+	return sessionKeyFromRequestWithDigester(req, inspection, processOpaqueDigester)
+}
+
+func sessionKeyFromRequestWithDigester(req pluginapi.RequestInterceptRequest, inspection payloadInspection, digester opaqueDigester) string {
 	callerScope := normalizeOpaqueIdentifier(metadataString(req.Metadata, "caller_scope"))
 	if kind, value := requestSessionIdentity(req, inspection); value != "" {
-		return opaqueDigest("session-v1", callerScope, kind, value)
+		return digester.digest("session-v1", callerScope, kind, value)
 	}
 	return ""
 }
@@ -128,7 +132,7 @@ func codexConversationIdentity(sessionID, threadID string) string {
 	if sessionID == "" && threadID == "" {
 		return ""
 	}
-	return opaqueDigest("codex-conversation-v1", sessionID, threadID)
+	return sessionID + "\x00" + threadID
 }
 
 func normalizedRawJSONString(raw json.RawMessage) string {

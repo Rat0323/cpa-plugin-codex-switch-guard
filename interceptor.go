@@ -9,28 +9,29 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/pluginapi"
 )
 
-type switchSafePlugin struct {
+type routeGuardPlugin struct {
 	cfg         pluginConfig
 	state       *routeStateStore
 	diagnostics *diagnosticReporter
+	digester    opaqueDigester
 }
 
-var _ pluginapi.RequestInterceptor = (*switchSafePlugin)(nil)
-var _ pluginapi.RequestLifecyclePlugin = (*switchSafePlugin)(nil)
+var _ pluginapi.RequestInterceptor = (*routeGuardPlugin)(nil)
+var _ pluginapi.RequestLifecyclePlugin = (*routeGuardPlugin)(nil)
 
-func (p *switchSafePlugin) InterceptRequestBeforeAuth(context.Context, pluginapi.RequestInterceptRequest) (pluginapi.RequestInterceptResponse, error) {
+func (p *routeGuardPlugin) InterceptRequestBeforeAuth(context.Context, pluginapi.RequestInterceptRequest) (pluginapi.RequestInterceptResponse, error) {
 	// The selected auth is unavailable before this hook, so changing state here
 	// would make retry/failover behavior unsafe.
 	return pluginapi.RequestInterceptResponse{}, nil
 }
 
-func (p *switchSafePlugin) InterceptRequestAfterAuth(_ context.Context, req pluginapi.RequestInterceptRequest) (pluginapi.RequestInterceptResponse, error) {
+func (p *routeGuardPlugin) InterceptRequestAfterAuth(_ context.Context, req pluginapi.RequestInterceptRequest) (pluginapi.RequestInterceptResponse, error) {
 	if p == nil || !p.cfg.Enabled || !isCodexTarget(req) {
 		return pluginapi.RequestInterceptResponse{}, nil
 	}
 	p.diagnostics.beginRequest(req.RequestID)
 
-	inspection, errInspect := inspectPayload(req.Body)
+	inspection, errInspect := inspectPayloadWithDigester(req.Body, p.digester)
 	if errInspect != nil {
 		if likelyContainsRouteBoundState(req.Body) {
 			p.diagnostics.action("warn", "reject_unparseable_state", req, map[string]any{
@@ -42,9 +43,12 @@ func (p *switchSafePlugin) InterceptRequestAfterAuth(_ context.Context, req plug
 		return pluginapi.RequestInterceptResponse{}, nil
 	}
 
-	sessionKey := sessionKeyFromRequest(req, inspection)
-	route, routeKnown := routeFingerprintFromRequest(req)
+	sessionKey := sessionKeyFromRequestWithDigester(req, inspection, p.digester)
+	route, routeKnown := routeFingerprintFromRequestWithDigester(req, p.digester)
 	decision := p.state.prepare(req.RequestID, sessionKey, route, routeKnown, inspection.Signals)
+	if errPersist := p.state.takePersistenceError(); errPersist != nil {
+		p.diagnostics.event("warn", "state_persistence_degraded", req, map[string]any{"reason": "state_write_failed"})
+	}
 	decisionFields := diagnosticDecisionFields(sessionKey, route, routeKnown, decision, inspection.Signals)
 	if decision.Reject {
 		p.diagnostics.action("warn", "block_compaction", req, decisionFields)
@@ -82,13 +86,13 @@ func (p *switchSafePlugin) InterceptRequestAfterAuth(_ context.Context, req plug
 	return pluginapi.RequestInterceptResponse{Body: updated}, nil
 }
 
-func (p *switchSafePlugin) HandleRequestComplete(_ context.Context, completion pluginapi.RequestCompletion) error {
+func (p *routeGuardPlugin) HandleRequestComplete(_ context.Context, completion pluginapi.RequestCompletion) error {
 	if p == nil || !p.cfg.Enabled {
 		return nil
 	}
-	p.state.complete(completion)
+	errPersist := p.state.complete(completion)
 	p.diagnostics.complete(completion)
-	return nil
+	return errPersist
 }
 
 func diagnosticDecisionFields(sessionKey string, route routeFingerprint, routeKnown bool, decision routeDecision, signals stateSignals) map[string]any {
@@ -119,12 +123,12 @@ func compactionTermination() pluginapi.RequestInterceptResponse {
 func stateResetTermination(status int, message string) pluginapi.RequestInterceptResponse {
 	body, errMarshal := json.Marshal(map[string]any{
 		"error": map[string]any{
-			"type":    "codex_switch_safe_reset_required",
+			"type":    "codex_context_guard_reset_required",
 			"message": message,
 		},
 	})
 	if errMarshal != nil {
-		body = []byte(`{"error":{"type":"codex_switch_safe_reset_required","message":"Codex route-bound state must be reset."}}`)
+		body = []byte(`{"error":{"type":"codex_context_guard_reset_required","message":"Codex route-bound state must be reset."}}`)
 	}
 	return pluginapi.RequestInterceptResponse{
 		Terminate:       true,

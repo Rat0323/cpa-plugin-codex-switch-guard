@@ -12,9 +12,9 @@ import (
 
 func TestABIRegistrationAdvertisesLifecycleAndSchema(t *testing.T) {
 	t.Cleanup(func() {
-		switchSafeABIState.Lock()
-		switchSafeABIState.plugin = nil
-		switchSafeABIState.Unlock()
+		routeGuardABIState.Lock()
+		routeGuardABIState.plugin = nil
+		routeGuardABIState.Unlock()
 	})
 
 	for _, tc := range []struct {
@@ -31,7 +31,10 @@ func TestABIRegistrationAdvertisesLifecycleAndSchema(t *testing.T) {
 		{name: "schema 1", schemaVersion: 1, wantError: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			request, errMarshal := json.Marshal(abiLifecycleRequest{SchemaVersion: tc.schemaVersion})
+			request, errMarshal := json.Marshal(abiLifecycleRequest{
+				SchemaVersion: tc.schemaVersion,
+				ConfigYAML:    []byte("persistence_enabled: false\n"),
+			})
 			if errMarshal != nil {
 				t.Fatal(errMarshal)
 			}
@@ -61,5 +64,21 @@ func TestABIRegistrationAdvertisesLifecycleAndSchema(t *testing.T) {
 				t.Fatalf("capabilities = %#v", result.Capabilities)
 			}
 		})
+	}
+}
+
+func TestPluginMetadataUsesRouteGuardIdentityAndPersistenceFields(t *testing.T) {
+	metadata := pluginMetadata()
+	if metadata.Name != "Codex Context Guard" || metadata.Version != "0.4.0" || metadata.GitHubRepository != "https://github.com/Rat0323/cpa-plugin-codex-context-guard" {
+		t.Fatalf("metadata = %#v", metadata)
+	}
+	fields := make(map[string]bool, len(metadata.ConfigFields))
+	for _, field := range metadata.ConfigFields {
+		fields[field.Name] = true
+	}
+	for _, required := range []string{"persistence_enabled", "state_file", "compaction_policy"} {
+		if !fields[required] {
+			t.Fatalf("metadata missing %q: %#v", required, metadata.ConfigFields)
+		}
 	}
 }

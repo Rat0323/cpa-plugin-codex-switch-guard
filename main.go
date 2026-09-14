@@ -5,20 +5,29 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/pluginapi"
 )
 
-var pluginVersion = "0.2.3"
+var pluginVersion = "0.4.0"
 
 const pluginSchemaVersion = pluginabi.SchemaVersion
 
-func buildPlugin(configYAML []byte) (*switchSafePlugin, error) {
+func buildPlugin(configYAML []byte) (*routeGuardPlugin, error) {
 	cfg, errParse := parsePluginConfig(configYAML)
 	if errParse != nil {
 		return nil, errParse
 	}
-	return &switchSafePlugin{
+	state := newRouteStateStore(cfg)
+	if cfg.Enabled && cfg.PersistenceEnabled {
+		state = newPersistentRouteStateStore(cfg)
+	}
+	plugin := &routeGuardPlugin{
 		cfg:         cfg,
-		state:       newRouteStateStore(cfg),
+		state:       state,
 		diagnostics: newDiagnosticReporter(cfg.Diagnostics, cfg.MaxPending, hostDiagnosticSink),
-	}, nil
+		digester:    state.digester,
+	}
+	if state.persistenceWarning != nil {
+		plugin.diagnostics.event("warn", "state_persistence_degraded", pluginapi.RequestInterceptRequest{}, map[string]any{"reason": "state_load_or_write_failed"})
+	}
+	return plugin, nil
 }
 
 func pluginMetadata() pluginapi.Metadata {
@@ -26,8 +35,18 @@ func pluginMetadata() pluginapi.Metadata {
 		Name:             pluginName,
 		Version:          pluginVersion,
 		Author:           "Rat0323",
-		GitHubRepository: "https://github.com/Rat0323/cpa-plugin-codex-switch-safe",
+		GitHubRepository: "https://github.com/Rat0323/cpa-plugin-codex-context-guard",
 		ConfigFields: []pluginapi.ConfigField{
+			{
+				Name:        "persistence_enabled",
+				Type:        pluginapi.ConfigFieldTypeBoolean,
+				Description: "Persist opaque route bindings across CPA restarts. Enabled by default; disable only if restart continuity is not required.",
+			},
+			{
+				Name:        "state_file",
+				Type:        pluginapi.ConfigFieldTypeString,
+				Description: "Optional absolute or relative state-file path. The default is the OS user configuration directory.",
+			},
 			{
 				Name:        "compaction_policy",
 				Type:        pluginapi.ConfigFieldTypeEnum,

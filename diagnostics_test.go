@@ -68,7 +68,7 @@ func TestParsePluginConfigDiagnostics(t *testing.T) {
 }
 
 func TestDiagnosticsActionsLogProtectionAndCompletionWithoutSensitiveValues(t *testing.T) {
-	p, errBuild := buildPlugin([]byte("enabled: true\ndiagnostics: actions\ncompaction_policy: strip\n"))
+	p, errBuild := buildPlugin([]byte("enabled: true\npersistence_enabled: false\ndiagnostics: actions\ncompaction_policy: strip\n"))
 	if errBuild != nil {
 		t.Fatal(errBuild)
 	}
@@ -147,7 +147,7 @@ func TestDiagnosticMessageUsesOnlySafeVisibleFields(t *testing.T) {
 		"route_ref":                    "route-ref",
 	})
 	for _, want := range []string{
-		"codex-switch-safe diagnostic",
+		"codex-context-guard diagnostic",
 		"action=strip_route_state",
 		"reasoning_removed=1",
 		"previous_response_id_removed=true",
@@ -195,7 +195,7 @@ func TestDiagnosticsModesControlPassThroughLogging(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(string(test.name), func(t *testing.T) {
-			p, errBuild := buildPlugin([]byte("enabled: true\n"))
+			p, errBuild := buildPlugin([]byte("enabled: true\npersistence_enabled: false\n"))
 			if errBuild != nil {
 				t.Fatal(errBuild)
 			}

@@ -4,7 +4,7 @@ remote-management:
   allow-remote: false
   secret-key: "$2a$10$mVeJPQD.EU9NcYJxpuYf2./RI0t29Ao2uKFb7RuNqxVn6jwmOh7jG"
   disable-control-panel: true
-auth-dir: "C:/CLIProxyAPI/cpa-plugin-codex-switch-safe/smoke/auth"
+auth-dir: "./smoke/auth"
 api-keys:
   - "smoke-key"
 debug: true
@@ -12,10 +12,11 @@ logging-to-file: false
 usage-statistics-enabled: false
 plugins:
   enabled: true
-  dir: "C:/CLIProxyAPI/cpa-plugin-codex-switch-safe/smoke/plugins"
+  dir: "./smoke/plugins"
   configs:
-    codex-switch-safe:
+    codex-context-guard:
       enabled: true
+      persistence_enabled: true
       state_ttl: 4h
       max_sessions: 128
       max_pending: 256

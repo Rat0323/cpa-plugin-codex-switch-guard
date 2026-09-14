@@ -10,7 +10,7 @@ import (
 )
 
 func TestInterceptorPreservesSameRouteAndStripsChangedRoute(t *testing.T) {
-	p, errBuild := buildPlugin([]byte("enabled: true\n"))
+	p, errBuild := buildPlugin([]byte("enabled: true\npersistence_enabled: false\n"))
 	if errBuild != nil {
 		t.Fatal(errBuild)
 	}
@@ -47,7 +47,7 @@ func TestInterceptorPreservesSameRouteAndStripsChangedRoute(t *testing.T) {
 }
 
 func TestInterceptorBlocksUnsafeCompactionByDefault(t *testing.T) {
-	p, errBuild := buildPlugin([]byte("enabled: true\ncompaction_policy: block\n"))
+	p, errBuild := buildPlugin([]byte("enabled: true\npersistence_enabled: false\ncompaction_policy: block\n"))
 	if errBuild != nil {
 		t.Fatal(errBuild)
 	}
@@ -59,10 +59,13 @@ func TestInterceptorBlocksUnsafeCompactionByDefault(t *testing.T) {
 	if errIntercept != nil || !resp.Terminate || resp.StatusCode != http.StatusConflict {
 		t.Fatalf("compaction response = %#v, err=%v", resp, errIntercept)
 	}
+	if !strings.Contains(string(resp.ResponseBody), `"type":"codex_context_guard_reset_required"`) {
+		t.Fatalf("unexpected error response: %s", resp.ResponseBody)
+	}
 }
 
 func TestInterceptorStripsUnsafeCompactionWhenConfigured(t *testing.T) {
-	p, errBuild := buildPlugin([]byte("enabled: true\ncompaction_policy: strip\n"))
+	p, errBuild := buildPlugin([]byte("enabled: true\npersistence_enabled: false\ncompaction_policy: strip\n"))
 	if errBuild != nil {
 		t.Fatal(errBuild)
 	}
@@ -83,7 +86,7 @@ func TestInterceptorStripsUnsafeCompactionWhenConfigured(t *testing.T) {
 }
 
 func TestInterceptorRemovesRetiredReasoningOnLaterSameRouteRequest(t *testing.T) {
-	p, errBuild := buildPlugin([]byte("enabled: true\n"))
+	p, errBuild := buildPlugin([]byte("enabled: true\npersistence_enabled: false\n"))
 	if errBuild != nil {
 		t.Fatal(errBuild)
 	}
@@ -113,7 +116,7 @@ func TestInterceptorRemovesRetiredReasoningOnLaterSameRouteRequest(t *testing.T)
 }
 
 func TestInterceptorFailClosedWithoutSelectedAuthOrSession(t *testing.T) {
-	p, errBuild := buildPlugin(nil)
+	p, errBuild := buildPlugin([]byte("persistence_enabled: false\n"))
 	if errBuild != nil {
 		t.Fatal(errBuild)
 	}

@@ -1,11 +1,11 @@
 {
-  "id": "codex-switch-safe",
-  "name": "Codex Switch Safe",
-  "description": "Preserves Codex encrypted reasoning only across the same selected credential route; strips unsafe top-level route-bound state during dynamic unprefixed switching.",
+  "id": "codex-context-guard",
+  "name": "Codex Context Guard",
+  "description": "Guards Codex route-bound reasoning and compaction state across credential or model changes, with restart-safe opaque route persistence.",
   "author": "Rat0323",
-  "repository": "https://github.com/Rat0323/cpa-plugin-codex-switch-safe",
-  "version": "0.2.3",
-  "homepage": "https://github.com/Rat0323/cpa-plugin-codex-switch-safe",
+  "repository": "https://github.com/Rat0323/cpa-plugin-codex-context-guard",
+  "version": "0.4.0",
+  "homepage": "https://github.com/Rat0323/cpa-plugin-codex-context-guard",
   "license": "MIT",
   "tags": ["Interceptor", "Security", "Codex", "Responses"]
 }

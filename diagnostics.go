@@ -78,6 +78,15 @@ func (d *diagnosticReporter) debug(action string, req pluginapi.RequestIntercept
 	d.sink("debug", diagnosticMessage(fields), fields)
 }
 
+func (d *diagnosticReporter) event(level, action string, req pluginapi.RequestInterceptRequest, fields map[string]any) {
+	if d == nil || d.level == diagnosticsOff {
+		return
+	}
+	fields = diagnosticFields(req, fields)
+	fields["action"] = action
+	d.sink(level, diagnosticMessage(fields), fields)
+}
+
 func (d *diagnosticReporter) complete(completion pluginapi.RequestCompletion) {
 	if d == nil || d.level == diagnosticsOff {
 		return
@@ -116,7 +125,7 @@ func (d *diagnosticReporter) complete(completion pluginapi.RequestCompletion) {
 // CPA's console formatter intentionally renders only a fixed field allowlist.
 // Repeat selected safe fields in the message so diagnostics stay useful there.
 func diagnosticMessage(fields map[string]any) string {
-	parts := []string{"codex-switch-safe diagnostic"}
+	parts := []string{"codex-context-guard diagnostic"}
 	for _, key := range []string{
 		"action",
 		"protected_action",

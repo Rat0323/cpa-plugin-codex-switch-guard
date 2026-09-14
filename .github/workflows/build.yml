@@ -15,7 +15,7 @@ permissions:
   contents: read
 
 env:
-  PLUGIN_ID: codex-switch-safe
+  PLUGIN_ID: codex-context-guard
 
 jobs:
   changes:
@@ -283,7 +283,7 @@ jobs:
             dist/*.zip dist/checksums.txt dist/artifact-manifest.json \
             --draft \
             --verify-tag \
-            --title "Codex Switch Safe ${GITHUB_REF_NAME}" \
+            --title "Codex Context Guard ${GITHUB_REF_NAME}" \
             --notes-file dist/release-notes.md
       - name: Verify and publish release
         env:

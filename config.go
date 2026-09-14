@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -9,8 +10,12 @@ import (
 )
 
 const (
-	pluginID   = "codex-switch-safe"
-	pluginName = "Codex Switch Safe"
+	pluginID   = "codex-context-guard"
+	pluginName = "Codex Context Guard"
+
+	// Keep the digest domain stable so state written by the previous public
+	// identity remains usable after the rename.
+	digestDomain = "codex-route-guard"
 
 	defaultStateTTL    = 4 * time.Hour
 	defaultMaxSessions = 4096
@@ -35,25 +40,30 @@ const (
 
 type pluginConfig struct {
 	Enabled             bool   `yaml:"enabled"`
+	PersistenceRaw      *bool  `yaml:"persistence_enabled"`
+	StateFileRaw        string `yaml:"state_file"`
 	StateTTLRaw         string `yaml:"state_ttl"`
 	MaxSessions         int    `yaml:"max_sessions"`
 	MaxPending          int    `yaml:"max_pending"`
 	CompactionPolicyRaw string `yaml:"compaction_policy"`
 	DiagnosticsRaw      string `yaml:"diagnostics"`
 
-	StateTTL         time.Duration    `yaml:"-"`
-	CompactionPolicy compactionPolicy `yaml:"-"`
-	Diagnostics      diagnosticsLevel `yaml:"-"`
+	StateTTL           time.Duration    `yaml:"-"`
+	PersistenceEnabled bool             `yaml:"-"`
+	StateFile          string           `yaml:"-"`
+	CompactionPolicy   compactionPolicy `yaml:"-"`
+	Diagnostics        diagnosticsLevel `yaml:"-"`
 }
 
 func defaultPluginConfig() pluginConfig {
 	return pluginConfig{
-		Enabled:          true,
-		StateTTL:         defaultStateTTL,
-		MaxSessions:      defaultMaxSessions,
-		MaxPending:       defaultMaxPending,
-		CompactionPolicy: compactionPolicyBlock,
-		Diagnostics:      defaultDiagnostics,
+		Enabled:            true,
+		PersistenceEnabled: true,
+		StateTTL:           defaultStateTTL,
+		MaxSessions:        defaultMaxSessions,
+		MaxPending:         defaultMaxPending,
+		CompactionPolicy:   compactionPolicyBlock,
+		Diagnostics:        defaultDiagnostics,
 	}
 }
 
@@ -63,6 +73,16 @@ func parsePluginConfig(raw []byte) (pluginConfig, error) {
 		if errUnmarshal := yaml.Unmarshal(raw, &cfg); errUnmarshal != nil {
 			return cfg, fmt.Errorf("invalid %s config: %w", pluginID, errUnmarshal)
 		}
+	}
+	if cfg.PersistenceRaw != nil {
+		cfg.PersistenceEnabled = *cfg.PersistenceRaw
+	}
+	if value := strings.TrimSpace(cfg.StateFileRaw); value != "" {
+		absolute, errAbs := filepath.Abs(value)
+		if errAbs != nil {
+			return cfg, fmt.Errorf("invalid state_file %q: %w", value, errAbs)
+		}
+		cfg.StateFile = filepath.Clean(absolute)
 	}
 
 	if value := strings.TrimSpace(cfg.StateTTLRaw); value != "" {

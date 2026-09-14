@@ -1,5 +1,5 @@
 blank_issues_enabled: false
 contact_links:
   - name: Security vulnerability
-    url: https://github.com/Rat0323/cpa-plugin-codex-switch-safe/security/advisories/new
+    url: https://github.com/Rat0323/cpa-plugin-codex-context-guard/security/advisories/new
     about: Report security-sensitive findings privately.

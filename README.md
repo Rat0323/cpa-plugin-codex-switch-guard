@@ -1,11 +1,11 @@
-# Codex Switch Safe
+# Codex Context Guard
 
 [English](README.md) | [简体中文](README_CN.md)
 
-[![Build](https://github.com/Rat0323/cpa-plugin-codex-switch-safe/actions/workflows/build.yml/badge.svg)](https://github.com/Rat0323/cpa-plugin-codex-switch-safe/actions/workflows/build.yml)
-[![Latest release](https://img.shields.io/github/v/release/Rat0323/cpa-plugin-codex-switch-safe)](https://github.com/Rat0323/cpa-plugin-codex-switch-safe/releases/latest)
-[![License](https://img.shields.io/github/license/Rat0323/cpa-plugin-codex-switch-safe)](LICENSE)
-[![Go version](https://img.shields.io/github/go-mod/go-version/Rat0323/cpa-plugin-codex-switch-safe)](go.mod)
+[![Build](https://github.com/Rat0323/cpa-plugin-codex-context-guard/actions/workflows/build.yml/badge.svg)](https://github.com/Rat0323/cpa-plugin-codex-context-guard/actions/workflows/build.yml)
+[![Latest release](https://img.shields.io/github/v/release/Rat0323/cpa-plugin-codex-context-guard)](https://github.com/Rat0323/cpa-plugin-codex-context-guard/releases/latest)
+[![License](https://img.shields.io/github/license/Rat0323/cpa-plugin-codex-context-guard)](LICENSE)
+[![Go version](https://img.shields.io/github/go-mod/go-version/Rat0323/cpa-plugin-codex-context-guard)](go.mod)
 
 A native CLIProxyAPI (CPA) interceptor for safe Codex credential and model
 failover. It preserves encrypted context on the same route and prevents
@@ -26,7 +26,7 @@ Conversation uses credential A
 -> the request fails or the conversation must restart cleanly
 ```
 
-Codex Switch Safe adds the missing route-awareness before the request reaches
+Codex Context Guard adds the missing route-awareness before the request reaches
 the selected upstream.
 
 ## How it protects requests
@@ -38,14 +38,14 @@ the selected upstream.
   for availability.
 - Commits route changes only after CPA reports a successful request lifecycle
   outcome; failed retries and failovers do not advance the route.
-- Keeps bounded, process-local state and emits privacy-safe diagnostics through
-  CPA's existing logging system.
+- Persists bounded opaque route bindings across normal CPA restarts and emits
+  privacy-safe diagnostics through CPA's existing logging system.
 - Ignores non-Codex targets and leaves unrelated request content untouched.
 
 The plugin never decrypts encrypted content and does not alter user prompts,
 tools, nested agent messages, or model selection.
 
-Codex Switch Safe is a route-safety boundary, not a cross-credential context
+Codex Context Guard is a route-safety boundary, not a cross-credential context
 migration system. It cannot decrypt state created by one credential or
 re-encrypt it for another.
 
@@ -58,6 +58,10 @@ re-encrypt it for another.
 
 Both policies preserve encrypted context unchanged when the committed
 credential and model route remains the same.
+
+`block` is not involved in an ordinary same-route continuation. It activates
+only when the route is changed or unknown and the request carries compaction,
+turning an otherwise silent loss of compressed context into an explicit choice.
 
 ## HTTP 409 is a protection action
 
@@ -83,22 +87,22 @@ Requirements:
 - A release asset matching the CPA host operating system and architecture.
 - A CPA configuration with plugins enabled.
 
-Install Codex Switch Safe from CPA's plugin store, or download the appropriate
+Install Codex Context Guard from CPA's plugin store, or download the appropriate
 archive from the
-[latest release](https://github.com/Rat0323/cpa-plugin-codex-switch-safe/releases/latest).
+[latest release](https://github.com/Rat0323/cpa-plugin-codex-context-guard/releases/latest).
 Each archive contains one root-level platform library:
 
 | Platform | Architectures | Library |
 | --- | --- | --- |
-| Windows | `amd64`, `arm64` | `codex-switch-safe.dll` |
-| Linux | `amd64`, `arm64` | `codex-switch-safe.so` |
-| macOS | `amd64`, `arm64` | `codex-switch-safe.dylib` |
+| Windows | `amd64`, `arm64` | `codex-context-guard.dll` |
+| Linux | `amd64`, `arm64` | `codex-context-guard.so` |
+| macOS | `amd64`, `arm64` | `codex-context-guard.dylib` |
 
 For a manual installation, extract the library into CPA's configured `plugins`
 directory and restart CPA. Release archives use this naming convention:
 
 ```text
-codex-switch-safe_<version>_<goos>_<goarch>.zip
+codex-context-guard_<version>_<goos>_<goarch>.zip
 ```
 
 The release also includes `checksums.txt` for archive verification and
@@ -127,8 +131,10 @@ Only top-level Responses input items are inspected for removal. Nested
 plugins:
   enabled: true
   configs:
-    codex-switch-safe:
+    codex-context-guard:
       enabled: true
+      persistence_enabled: true
+      # state_file: C:/path/to/codex-context-guard-state.json
       compaction_policy: block
       state_ttl: 4h
       max_sessions: 4096
@@ -139,6 +145,8 @@ plugins:
 | Field | Default | Accepted values | Purpose |
 | --- | --- | --- | --- |
 | `enabled` | `true` | `true`, `false` | Plugin instance toggle |
+| `persistence_enabled` | `true` | `true`, `false` | Keep opaque route bindings across CPA restarts |
+| `state_file` | `<UserConfigDir>/codex-context-guard/route-state-v1.json` | File path | Optional persistent-state location |
 | `compaction_policy` | `block` | `block`, `strip` | Compaction handling |
 | `state_ttl` | `4h` | `1m` through `24h` | Route binding lifetime |
 | `max_sessions` | `4096` | `1` through `65536` | Session entry cap |
@@ -160,9 +168,11 @@ handle ordinary encrypted reasoning and same-route continuations identically:
 | Main tradeoff | Maximum continuity safety; the turn may require retrying on the original route or starting clean | Higher availability; compressed context may be discarded on a route switch |
 
 `block` is appropriate when preserving compressed conversation context matters
-more than completing the current turn. `strip` is appropriate when automatic
-credential failover should keep working even if the new route must continue
-without the old route's compressed state.
+more than completing the current turn. A compaction item may be the only compact
+representation of earlier conversation state, so silently removing it can make
+the continuation incomplete in ways the user cannot see from the current prompt.
+`strip` is appropriate when automatic credential failover should keep working
+even if the new route must continue without the old route's compressed state.
 
 CPA `7.2.130` exposes plugin-owned configuration fields without a separate
 default-value property. Management screens may therefore display these fields as
@@ -170,7 +180,7 @@ blank until an override is saved. Blank or omitted fields are valid: the plugin
 applies the runtime defaults shown above.
 
 The CPA plugin priority controls interceptor order. If another request
-interceptor rewrites Codex request bodies, give Codex Switch Safe a lower
+interceptor rewrites Codex request bodies, give Codex Context Guard a lower
 priority so it runs afterward and performs the final safety check.
 
 ## Diagnostics and privacy
@@ -186,17 +196,25 @@ short-term troubleshooting when you need to confirm whether the plugin observed
 and passed or sanitized a request.
 
 Diagnostics include the CPA request ID, action, outcome, removal counts, and
-short process-local HMAC references for route/session correlation. They never
+short HMAC references for route/session correlation. They never
 include:
 
 - API keys or authorization headers.
 - Raw selected-auth, session, thread, or conversation IDs.
 - Request bodies, encrypted content, reasoning text, or user conversation text.
 
-The plugin has no network access and does not write files. It stores routing
-state only in memory and uses a random process-local HMAC key for opaque item
-fingerprints and diagnostic references. References cannot be correlated across
-CPA restarts.
+The plugin has no network access. By default it writes one versioned state file
+under the operating system's user configuration directory. The file contains a
+random HMAC key, opaque fingerprints, timestamps, sequence numbers, and safety
+flags only; it does not contain raw auth/session/thread IDs, request bodies,
+encrypted content, or conversation text. The directory and file are created
+with restrictive permissions where the operating system exposes POSIX modes,
+and updates use a same-directory temporary file plus atomic replacement.
+
+Set `persistence_enabled: false` to keep all state process-local. After a restart
+that configuration deliberately returns to `unknown` route handling. A custom
+`state_file` is useful for service accounts or controlled backup locations; its
+parent directory should be private to the CPA service user.
 
 ## Safety model
 
@@ -212,9 +230,12 @@ CPA restarts.
 - **Concurrency isolation:** independent execution sessions remain isolated.
   Same-session cross-route concurrency taints the session until a clean
   successful turn establishes a new route.
-- **Bounded memory:** configurable TTL and entry caps constrain process-local
-  state. An overflowed retired-item barrier causes conservative full stripping
-  for that session until its state expires.
+- **Restart continuity:** successful route commits, invalidations, taint flags,
+  and retired-item barriers survive normal CPA restarts. In-flight requests do
+  not; after restart they are treated conservatively.
+- **Bounded state:** configurable TTL and entry caps constrain memory and the
+  persisted snapshot. An overflowed retired-item barrier causes conservative
+  full stripping for that session until its state expires.
 
 The plugin does not serialize model requests. It deliberately prefers a clean
 continuation over guessing which concurrent result is valid.
@@ -223,12 +244,26 @@ continuation over guessing which concurrent result is valid.
 
 The plugin cannot distinguish a server-side key rotation that reuses the same
 CPA auth ID until the upstream reports an invalid signature. On that signal it
-invalidates the matching in-memory route and forces the next continuation to be
-clean.
+invalidates the matching route and forces the next continuation to be clean.
 
 Removing route-bound state can reduce available reasoning context for a turn,
 but it does not change the user prompt, tools, subagent messages, or model
-selection. Process-local routing state is reset whenever CPA restarts.
+selection. If persistence is disabled, unavailable, or recovered from a damaged
+file, the affected route is unknown and the configured `block` or `strip`
+policy applies. Persistence improves restart continuity; it does not make
+encrypted state portable between credentials.
+
+## Migrating to Codex Context Guard
+
+Version `0.4.0` renames the public identity from Codex Route Guard to Codex
+Context Guard. Remove the old library before installing `codex-context-guard`,
+and rename the CPA configuration key from `codex-route-guard` to
+`codex-context-guard`. Do not load both libraries at the same time. The HTTP
+error type is now `codex_context_guard_reset_required`.
+
+When persistence uses its default location, the first start also migrates a
+valid snapshot from the previous `codex-route-guard` or `codex-switch-safe`
+directory. Explicit `state_file` paths are left unchanged.
 
 ## Development
 

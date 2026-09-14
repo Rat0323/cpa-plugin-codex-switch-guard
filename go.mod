@@ -1,4 +1,4 @@
-module github.com/Rat0323/cpa-plugin-codex-switch-safe
+module github.com/Rat0323/cpa-plugin-codex-context-guard
 
 go 1.26.0
 

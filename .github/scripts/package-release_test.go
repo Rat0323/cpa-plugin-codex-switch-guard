@@ -13,8 +13,8 @@ import (
 
 func TestPackageManifestMatchesArchiveAndLibrary(t *testing.T) {
 	tempDir := t.TempDir()
-	libraryPath := filepath.Join(tempDir, "codex-switch-safe.dll")
-	archivePath := filepath.Join(tempDir, "codex-switch-safe_1.2.3_windows_amd64.zip")
+	libraryPath := filepath.Join(tempDir, "codex-context-guard.dll")
+	archivePath := filepath.Join(tempDir, "codex-context-guard_1.2.3_windows_amd64.zip")
 	libraryData := []byte("test shared library")
 	if errWrite := os.WriteFile(libraryPath, libraryData, 0o755); errWrite != nil {
 		t.Fatal(errWrite)
