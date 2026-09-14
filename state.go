@@ -60,7 +60,7 @@ func (r routeFingerprint) equal(other routeFingerprint) bool {
 
 func (d opaqueDigester) digest(namespace string, parts ...string) string {
 	hash := hmac.New(sha256.New, d.key)
-	_, _ = hash.Write([]byte(digestDomain))
+	_, _ = hash.Write([]byte(pluginID))
 	_, _ = hash.Write([]byte{0})
 	_, _ = hash.Write([]byte(namespace))
 	for _, part := range parts {

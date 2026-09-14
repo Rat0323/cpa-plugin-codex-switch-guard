@@ -231,58 +231,28 @@ func TestPersistentRouteStateKeepsConcurrentTaintAcrossRestart(t *testing.T) {
 	}
 }
 
-func TestDefaultStatePathMigratesFromRouteGuardDirectory(t *testing.T) {
-	// Exercise the path contract with an isolated root; the constructor uses the
-	// same helpers with the host's user config directory.
+func TestDefaultStatePathUsesPluginID(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "config")
-	canonical, errCanonical := persistentStatePathWithRoot("", root)
-	if errCanonical != nil {
-		t.Fatal(errCanonical)
+	path, errPath := persistentStatePathWithRoot("", root)
+	if errPath != nil {
+		t.Fatal(errPath)
 	}
-	if !strings.Contains(canonical, pluginID) {
-		t.Fatalf("canonical state path = %q, want plugin id %q", canonical, pluginID)
-	}
-	legacy := legacyPersistentStatePathsWithRoot(root)
-	if len(legacy) != 2 || filepath.Clean(legacy[0]) == filepath.Clean(canonical) || filepath.Clean(legacy[1]) == filepath.Clean(canonical) {
-		t.Fatalf("legacy state paths = %#v, canonical = %q", legacy, canonical)
-	}
-
-	cfg := testConfig()
-	cfg.StateFile = legacy[0]
-	seed := newPersistentRouteStateStoreWithClock(cfg, func() time.Time { return time.Now().UTC() })
-	session := seed.digester.digest("session-v1", "caller", "execution", "session")
-	route := routeFingerprint{Digest: seed.digester.digest("route-v1", "auth", "model", "codex")}
-	seed.prepare("seed", session, route, true, stateSignals{})
-	if errComplete := seed.complete(pluginapi.RequestCompletion{RequestID: "seed", Outcome: pluginapi.RequestCompletionSucceeded}); errComplete != nil {
-		t.Fatal(errComplete)
-	}
-
-	cfg.StateFile = ""
-	migrated := newPersistentRouteStateStoreWithClockAndRoot(cfg, time.Now, root)
-	if migrated.persistenceWarning != nil {
-		t.Fatal(migrated.persistenceWarning)
-	}
-	if _, errStat := os.Stat(canonical); errStat != nil {
-		t.Fatalf("canonical state was not migrated: %v", errStat)
-	}
-	decision := migrated.prepare("verify", session, route, true, stateSignals{HasReasoning: true})
-	if decision.Relation != routeRelationSame || decision.Strip || decision.Reject {
-		t.Fatalf("migrated route decision = %#v", decision)
+	if want := filepath.Join(root, pluginID, "route-state-v1.json"); path != want {
+		t.Fatalf("default state path = %q, want %q", path, want)
 	}
 }
 
-func TestRouteDigestNamespaceRemainsStableAcrossRename(t *testing.T) {
+func TestRouteDigestIsScopedToPluginID(t *testing.T) {
 	digester := newOpaqueDigester([]byte("01234567890123456789012345678901"))
 	got := digester.digest("route-v1", "auth", "model", "codex")
 	hash := hmac.New(sha256.New, []byte("01234567890123456789012345678901"))
-	for _, part := range []string{"codex-route-guard", "route-v1", "auth", "model", "codex"} {
-		if part != "codex-route-guard" {
-			_, _ = hash.Write([]byte{0})
-		}
+	_, _ = hash.Write([]byte(pluginID))
+	for _, part := range []string{"route-v1", "auth", "model", "codex"} {
+		_, _ = hash.Write([]byte{0})
 		_, _ = hash.Write([]byte(part))
 	}
 	want := hex.EncodeToString(hash.Sum(nil))
 	if got != want {
-		t.Fatalf("route digest = %q, want legacy-compatible value %q", got, want)
+		t.Fatalf("route digest = %q, want plugin-scoped value %q", got, want)
 	}
 }

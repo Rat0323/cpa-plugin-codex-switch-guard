@@ -56,30 +56,11 @@ func newPersistentRouteStateStoreWithClockAndRoot(cfg pluginConfig, now func() t
 	store.persistence = &statePersistence{path: path}
 
 	document, errLoad := store.persistence.load(cfg, store.now())
-	loadedLegacy := false
-	if errors.Is(errLoad, os.ErrNotExist) && strings.TrimSpace(cfg.StateFile) == "" {
-		for _, legacyPath := range legacyPersistentStatePathsWithRoot(root) {
-			legacy := &statePersistence{path: legacyPath}
-			document, errLoad = legacy.load(cfg, store.now())
-			if errLoad == nil {
-				loadedLegacy = true
-				break
-			}
-			if !errors.Is(errLoad, os.ErrNotExist) {
-				break
-			}
-		}
-	}
 	if errLoad == nil {
 		key, _ := base64.RawStdEncoding.DecodeString(document.DigestKey)
 		store.digester = newOpaqueDigester(key)
 		store.sequence = document.Sequence
 		store.sessions = document.Sessions
-		if loadedLegacy {
-			if errPersist := store.persistLocked(); errPersist != nil {
-				store.persistenceWarning = errPersist
-			}
-		}
 		return store
 	}
 	if !errors.Is(errLoad, os.ErrNotExist) {
@@ -91,14 +72,6 @@ func newPersistentRouteStateStoreWithClockAndRoot(cfg pluginConfig, now func() t
 	return store
 }
 
-func persistentStatePath(configured string) (string, error) {
-	root, errConfig := os.UserConfigDir()
-	if errConfig != nil {
-		return "", fmt.Errorf("resolve user config directory: %w", errConfig)
-	}
-	return persistentStatePathWithRoot(configured, root)
-}
-
 func persistentStatePathWithRoot(configured, root string) (string, error) {
 	if strings.TrimSpace(configured) != "" {
 		return filepath.Clean(configured), nil
@@ -107,24 +80,6 @@ func persistentStatePathWithRoot(configured, root string) (string, error) {
 		return "", fmt.Errorf("user config directory is empty")
 	}
 	return filepath.Join(root, pluginID, "route-state-v1.json"), nil
-}
-
-func legacyPersistentStatePaths() []string {
-	root, errConfig := os.UserConfigDir()
-	if errConfig != nil {
-		return nil
-	}
-	return legacyPersistentStatePathsWithRoot(root)
-}
-
-func legacyPersistentStatePathsWithRoot(root string) []string {
-	if strings.TrimSpace(root) == "" {
-		return nil
-	}
-	return []string{
-		filepath.Join(root, "codex-route-guard", "route-state-v1.json"),
-		filepath.Join(root, "codex-switch-safe", "route-state-v1.json"),
-	}
 }
 
 func (p *statePersistence) load(cfg pluginConfig, now time.Time) (persistentStateDocument, error) {

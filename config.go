@@ -13,10 +13,6 @@ const (
 	pluginID   = "codex-context-guard"
 	pluginName = "Codex Context Guard"
 
-	// Keep the digest domain stable so state written by the previous public
-	// identity remains usable after the rename.
-	digestDomain = "codex-route-guard"
-
 	defaultStateTTL    = 4 * time.Hour
 	defaultMaxSessions = 4096
 	defaultMaxPending  = 8192
