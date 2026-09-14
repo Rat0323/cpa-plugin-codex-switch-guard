@@ -11,7 +11,7 @@ Only the latest release line receives security fixes.
 
 ## Reporting a vulnerability
 
-Use [GitHub private vulnerability reporting](https://github.com/Rat0323/cpa-plugin-codex-context-guard/security/advisories/new)
+Use [GitHub private vulnerability reporting](https://github.com/Rat0323/cpa-plugin-codex-switch-guard/security/advisories/new)
 for security-sensitive findings.
 
 Do not open a public issue containing credentials, authorization headers, raw

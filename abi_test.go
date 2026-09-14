@@ -12,9 +12,9 @@ import (
 
 func TestABIRegistrationAdvertisesLifecycleAndSchema(t *testing.T) {
 	t.Cleanup(func() {
-		routeGuardABIState.Lock()
-		routeGuardABIState.plugin = nil
-		routeGuardABIState.Unlock()
+		switchGuardABIState.Lock()
+		switchGuardABIState.plugin = nil
+		switchGuardABIState.Unlock()
 	})
 
 	for _, tc := range []struct {
@@ -67,9 +67,9 @@ func TestABIRegistrationAdvertisesLifecycleAndSchema(t *testing.T) {
 	}
 }
 
-func TestPluginMetadataUsesRouteGuardIdentityAndPersistenceFields(t *testing.T) {
+func TestPluginMetadataUsesSwitchGuardIdentityAndPersistenceFields(t *testing.T) {
 	metadata := pluginMetadata()
-	if metadata.Name != "Codex Context Guard" || metadata.Version != "0.4.0" || metadata.GitHubRepository != "https://github.com/Rat0323/cpa-plugin-codex-context-guard" {
+	if metadata.Name != "Codex Switch Guard" || metadata.Version != "0.3.0" || metadata.GitHubRepository != "https://github.com/Rat0323/cpa-plugin-codex-switch-guard" {
 		t.Fatalf("metadata = %#v", metadata)
 	}
 	fields := make(map[string]bool, len(metadata.ConfigFields))

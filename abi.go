@@ -32,22 +32,22 @@ typedef struct {
 	cliproxy_plugin_shutdown_fn shutdown;
 } cliproxy_plugin_api;
 
-static int CodexRouteGuardHostCall(cliproxy_host_api* host, const char* method, const uint8_t* request, size_t request_len, cliproxy_buffer* response) {
+static int CodexSwitchGuardHostCall(cliproxy_host_api* host, const char* method, const uint8_t* request, size_t request_len, cliproxy_buffer* response) {
 	if (host == NULL || host->call == NULL) {
 		return 1;
 	}
 	return host->call(host->host_ctx, method, request, request_len, response);
 }
 
-static void CodexRouteGuardHostFree(cliproxy_host_api* host, void* ptr, size_t len) {
+static void CodexSwitchGuardHostFree(cliproxy_host_api* host, void* ptr, size_t len) {
 	if (host != NULL && host->free_buffer != NULL && ptr != NULL) {
 		host->free_buffer(ptr, len);
 	}
 }
 
-extern int CodexRouteGuardPluginCall(char*, uint8_t*, size_t, cliproxy_buffer*);
-extern void CodexRouteGuardPluginFree(void*, size_t);
-extern void CodexRouteGuardPluginShutdown(void);
+extern int CodexSwitchGuardPluginCall(char*, uint8_t*, size_t, cliproxy_buffer*);
+extern void CodexSwitchGuardPluginFree(void*, size_t);
+extern void CodexSwitchGuardPluginShutdown(void);
 */
 import "C"
 
@@ -64,14 +64,14 @@ import (
 
 const maxCGoBytesLen = C.size_t(1<<31 - 1)
 
-var routeGuardABIState = struct {
+var switchGuardABIState = struct {
 	sync.Mutex
-	plugin       *routeGuardPlugin
+	plugin       *switchGuardPlugin
 	shuttingDown bool
 	inFlight     sync.WaitGroup
 }{}
 
-var routeGuardHostState = struct {
+var switchGuardHostState = struct {
 	sync.RWMutex
 	api *C.cliproxy_host_api
 }{}
@@ -98,19 +98,19 @@ func cliproxy_plugin_init(host *C.cliproxy_host_api, plugin *C.cliproxy_plugin_a
 		return 1
 	}
 	configureHostAPI(host)
-	routeGuardABIState.Lock()
-	routeGuardABIState.shuttingDown = false
-	routeGuardABIState.Unlock()
+	switchGuardABIState.Lock()
+	switchGuardABIState.shuttingDown = false
+	switchGuardABIState.Unlock()
 
 	plugin.abi_version = C.uint32_t(pluginabi.ABIVersion)
-	plugin.call = C.cliproxy_plugin_call_fn(C.CodexRouteGuardPluginCall)
-	plugin.free_buffer = C.cliproxy_plugin_free_fn(C.CodexRouteGuardPluginFree)
-	plugin.shutdown = C.cliproxy_plugin_shutdown_fn(C.CodexRouteGuardPluginShutdown)
+	plugin.call = C.cliproxy_plugin_call_fn(C.CodexSwitchGuardPluginCall)
+	plugin.free_buffer = C.cliproxy_plugin_free_fn(C.CodexSwitchGuardPluginFree)
+	plugin.shutdown = C.cliproxy_plugin_shutdown_fn(C.CodexSwitchGuardPluginShutdown)
 	return 0
 }
 
-//export CodexRouteGuardPluginCall
-func CodexRouteGuardPluginCall(method *C.char, request *C.uint8_t, requestLen C.size_t, response *C.cliproxy_buffer) C.int {
+//export CodexSwitchGuardPluginCall
+func CodexSwitchGuardPluginCall(method *C.char, request *C.uint8_t, requestLen C.size_t, response *C.cliproxy_buffer) C.int {
 	if response != nil {
 		response.ptr = nil
 		response.len = 0
@@ -137,29 +137,29 @@ func CodexRouteGuardPluginCall(method *C.char, request *C.uint8_t, requestLen C.
 	return 0
 }
 
-//export CodexRouteGuardPluginFree
-func CodexRouteGuardPluginFree(ptr unsafe.Pointer, _ C.size_t) {
+//export CodexSwitchGuardPluginFree
+func CodexSwitchGuardPluginFree(ptr unsafe.Pointer, _ C.size_t) {
 	if ptr != nil {
 		C.free(ptr)
 	}
 }
 
-//export CodexRouteGuardPluginShutdown
-func CodexRouteGuardPluginShutdown() {
-	routeGuardABIState.Lock()
-	routeGuardABIState.shuttingDown = true
-	routeGuardABIState.plugin = nil
-	routeGuardABIState.Unlock()
-	routeGuardABIState.inFlight.Wait()
+//export CodexSwitchGuardPluginShutdown
+func CodexSwitchGuardPluginShutdown() {
+	switchGuardABIState.Lock()
+	switchGuardABIState.shuttingDown = true
+	switchGuardABIState.plugin = nil
+	switchGuardABIState.Unlock()
+	switchGuardABIState.inFlight.Wait()
 	clearHostAPI()
 }
 
 func configureHostAPI(host *C.cliproxy_host_api) {
-	routeGuardHostState.Lock()
-	defer routeGuardHostState.Unlock()
-	if routeGuardHostState.api != nil {
-		C.free(unsafe.Pointer(routeGuardHostState.api))
-		routeGuardHostState.api = nil
+	switchGuardHostState.Lock()
+	defer switchGuardHostState.Unlock()
+	if switchGuardHostState.api != nil {
+		C.free(unsafe.Pointer(switchGuardHostState.api))
+		switchGuardHostState.api = nil
 	}
 	if host == nil {
 		return
@@ -169,15 +169,15 @@ func configureHostAPI(host *C.cliproxy_host_api) {
 		return
 	}
 	*copyAPI = *host
-	routeGuardHostState.api = copyAPI
+	switchGuardHostState.api = copyAPI
 }
 
 func clearHostAPI() {
-	routeGuardHostState.Lock()
-	defer routeGuardHostState.Unlock()
-	if routeGuardHostState.api != nil {
-		C.free(unsafe.Pointer(routeGuardHostState.api))
-		routeGuardHostState.api = nil
+	switchGuardHostState.Lock()
+	defer switchGuardHostState.Unlock()
+	if switchGuardHostState.api != nil {
+		C.free(unsafe.Pointer(switchGuardHostState.api))
+		switchGuardHostState.api = nil
 	}
 }
 
@@ -191,9 +191,9 @@ func hostDiagnosticSink(level, message string, fields map[string]any) {
 		return
 	}
 
-	routeGuardHostState.RLock()
-	defer routeGuardHostState.RUnlock()
-	if routeGuardHostState.api == nil {
+	switchGuardHostState.RLock()
+	defer switchGuardHostState.RUnlock()
+	if switchGuardHostState.api == nil {
 		return
 	}
 	method := C.CString(pluginabi.MethodHostLog)
@@ -201,14 +201,14 @@ func hostDiagnosticSink(level, message string, fields map[string]any) {
 	request := C.CBytes(payload)
 	defer C.free(request)
 	var response C.cliproxy_buffer
-	_ = C.CodexRouteGuardHostCall(
-		routeGuardHostState.api,
+	_ = C.CodexSwitchGuardHostCall(
+		switchGuardHostState.api,
 		method,
 		(*C.uint8_t)(request),
 		C.size_t(len(payload)),
 		&response,
 	)
-	C.CodexRouteGuardHostFree(routeGuardHostState.api, response.ptr, response.len)
+	C.CodexSwitchGuardHostFree(switchGuardHostState.api, response.ptr, response.len)
 }
 
 func handleABIMethod(ctx context.Context, method string, request []byte) ([]byte, error) {
@@ -270,27 +270,27 @@ func handlePluginLifecycle(request []byte) ([]byte, error) {
 	if errBuild != nil {
 		return nil, errBuild
 	}
-	routeGuardABIState.Lock()
-	if routeGuardABIState.shuttingDown {
-		routeGuardABIState.Unlock()
+	switchGuardABIState.Lock()
+	if switchGuardABIState.shuttingDown {
+		switchGuardABIState.Unlock()
 		return nil, fmt.Errorf("%s is shutting down", pluginID)
 	}
-	routeGuardABIState.plugin = p
-	routeGuardABIState.Unlock()
+	switchGuardABIState.plugin = p
+	switchGuardABIState.Unlock()
 	return abiOKEnvelope(pluginRegistration(schemaVersion))
 }
 
-func beginPluginCall() (*routeGuardPlugin, func(), error) {
-	routeGuardABIState.Lock()
-	defer routeGuardABIState.Unlock()
-	if routeGuardABIState.shuttingDown {
+func beginPluginCall() (*switchGuardPlugin, func(), error) {
+	switchGuardABIState.Lock()
+	defer switchGuardABIState.Unlock()
+	if switchGuardABIState.shuttingDown {
 		return nil, nil, fmt.Errorf("%s is shutting down", pluginID)
 	}
-	if routeGuardABIState.plugin == nil {
+	if switchGuardABIState.plugin == nil {
 		return nil, nil, fmt.Errorf("%s is not registered", pluginID)
 	}
-	routeGuardABIState.inFlight.Add(1)
-	return routeGuardABIState.plugin, routeGuardABIState.inFlight.Done, nil
+	switchGuardABIState.inFlight.Add(1)
+	return switchGuardABIState.plugin, switchGuardABIState.inFlight.Done, nil
 }
 
 func abiOKEnvelopeWithError(value any, err error) ([]byte, error) {

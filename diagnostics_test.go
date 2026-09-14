@@ -147,7 +147,7 @@ func TestDiagnosticMessageUsesOnlySafeVisibleFields(t *testing.T) {
 		"route_ref":                    "route-ref",
 	})
 	for _, want := range []string{
-		"codex-context-guard diagnostic",
+		"codex-switch-guard diagnostic",
 		"action=strip_route_state",
 		"reasoning_removed=1",
 		"previous_response_id_removed=true",

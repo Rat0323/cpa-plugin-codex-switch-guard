@@ -1,14 +1,14 @@
-# Codex Context Guard
+# Codex Switch Guard
 
 [English](README.md) | [简体中文](README_CN.md)
 
-[![Build](https://github.com/Rat0323/cpa-plugin-codex-context-guard/actions/workflows/build.yml/badge.svg)](https://github.com/Rat0323/cpa-plugin-codex-context-guard/actions/workflows/build.yml)
-[![Latest release](https://img.shields.io/github/v/release/Rat0323/cpa-plugin-codex-context-guard)](https://github.com/Rat0323/cpa-plugin-codex-context-guard/releases/latest)
-[![License](https://img.shields.io/github/license/Rat0323/cpa-plugin-codex-context-guard)](LICENSE)
-[![Go version](https://img.shields.io/github/go-mod/go-version/Rat0323/cpa-plugin-codex-context-guard)](go.mod)
+[![Build](https://github.com/Rat0323/cpa-plugin-codex-switch-guard/actions/workflows/build.yml/badge.svg)](https://github.com/Rat0323/cpa-plugin-codex-switch-guard/actions/workflows/build.yml)
+[![Latest release](https://img.shields.io/github/v/release/Rat0323/cpa-plugin-codex-switch-guard)](https://github.com/Rat0323/cpa-plugin-codex-switch-guard/releases/latest)
+[![License](https://img.shields.io/github/license/Rat0323/cpa-plugin-codex-switch-guard)](LICENSE)
+[![Go version](https://img.shields.io/github/go-mod/go-version/Rat0323/cpa-plugin-codex-switch-guard)](go.mod)
 
-A native CLIProxyAPI (CPA) interceptor for safe Codex credential and model
-failover. It preserves encrypted context on the same route and prevents
+A native CLIProxyAPI (CPA) interceptor that keeps Codex credential and model
+switches safe. It preserves encrypted context on the same route and prevents
 route-bound state from crossing into a different or unknown upstream.
 
 ## Why it exists
@@ -26,7 +26,7 @@ Conversation uses credential A
 -> the request fails or the conversation must restart cleanly
 ```
 
-Codex Context Guard adds the missing route-awareness before the request reaches
+Codex Switch Guard adds the missing route-awareness before the request reaches
 the selected upstream.
 
 ## How it protects requests
@@ -45,7 +45,7 @@ the selected upstream.
 The plugin never decrypts encrypted content and does not alter user prompts,
 tools, nested agent messages, or model selection.
 
-Codex Context Guard is a route-safety boundary, not a cross-credential context
+Codex Switch Guard is a route-safety boundary, not a cross-credential context
 migration system. It cannot decrypt state created by one credential or
 re-encrypt it for another.
 
@@ -87,22 +87,22 @@ Requirements:
 - A release asset matching the CPA host operating system and architecture.
 - A CPA configuration with plugins enabled.
 
-Install Codex Context Guard from CPA's plugin store, or download the appropriate
+Install Codex Switch Guard from CPA's plugin store, or download the appropriate
 archive from the
-[latest release](https://github.com/Rat0323/cpa-plugin-codex-context-guard/releases/latest).
+[latest release](https://github.com/Rat0323/cpa-plugin-codex-switch-guard/releases/latest).
 Each archive contains one root-level platform library:
 
 | Platform | Architectures | Library |
 | --- | --- | --- |
-| Windows | `amd64`, `arm64` | `codex-context-guard.dll` |
-| Linux | `amd64`, `arm64` | `codex-context-guard.so` |
-| macOS | `amd64`, `arm64` | `codex-context-guard.dylib` |
+| Windows | `amd64`, `arm64` | `codex-switch-guard.dll` |
+| Linux | `amd64`, `arm64` | `codex-switch-guard.so` |
+| macOS | `amd64`, `arm64` | `codex-switch-guard.dylib` |
 
 For a manual installation, extract the library into CPA's configured `plugins`
 directory and restart CPA. Release archives use this naming convention:
 
 ```text
-codex-context-guard_<version>_<goos>_<goarch>.zip
+codex-switch-guard_<version>_<goos>_<goarch>.zip
 ```
 
 The release also includes `checksums.txt` for archive verification and
@@ -131,10 +131,10 @@ Only top-level Responses input items are inspected for removal. Nested
 plugins:
   enabled: true
   configs:
-    codex-context-guard:
+    codex-switch-guard:
       enabled: true
       persistence_enabled: true
-      # state_file: C:/path/to/codex-context-guard-state.json
+      # state_file: C:/path/to/codex-switch-guard-state.json
       compaction_policy: block
       state_ttl: 4h
       max_sessions: 4096
@@ -146,7 +146,7 @@ plugins:
 | --- | --- | --- | --- |
 | `enabled` | `true` | `true`, `false` | Plugin instance toggle |
 | `persistence_enabled` | `true` | `true`, `false` | Keep opaque route bindings across CPA restarts |
-| `state_file` | `<UserConfigDir>/codex-context-guard/route-state-v1.json` | File path | Optional persistent-state location |
+| `state_file` | `<UserConfigDir>/codex-switch-guard/route-state-v1.json` | File path | Optional persistent-state location |
 | `compaction_policy` | `block` | `block`, `strip` | Compaction handling |
 | `state_ttl` | `4h` | `1m` through `24h` | Route binding lifetime |
 | `max_sessions` | `4096` | `1` through `65536` | Session entry cap |
@@ -180,7 +180,7 @@ blank until an override is saved. Blank or omitted fields are valid: the plugin
 applies the runtime defaults shown above.
 
 The CPA plugin priority controls interceptor order. If another request
-interceptor rewrites Codex request bodies, give Codex Context Guard a lower
+interceptor rewrites Codex request bodies, give Codex Switch Guard a lower
 priority so it runs afterward and performs the final safety check.
 
 ## Diagnostics and privacy
@@ -253,17 +253,16 @@ file, the affected route is unknown and the configured `block` or `strip`
 policy applies. Persistence improves restart continuity; it does not make
 encrypted state portable between credentials.
 
-## Migrating to Codex Context Guard
+## Migrating from Codex Switch Safe
 
-Version `0.4.0` renames the public identity from Codex Route Guard to Codex
-Context Guard. Remove the old library before installing `codex-context-guard`,
-and rename the CPA configuration key from `codex-route-guard` to
-`codex-context-guard`. Do not load both libraries at the same time. The HTTP
-error type is now `codex_context_guard_reset_required`.
+Version `0.3.0` renames the plugin from Codex Switch Safe to Codex Switch
+Guard. Remove the old `codex-switch-safe` library before installing
+`codex-switch-guard`, rename the CPA configuration key from `codex-switch-safe`
+to `codex-switch-guard`, and do not load both libraries at the same time. The
+HTTP error type is now `codex_switch_guard_reset_required`.
 
-When persistence uses its default location, the first start also migrates a
-valid snapshot from the previous `codex-route-guard` or `codex-switch-safe`
-directory. Explicit `state_file` paths are left unchanged.
+No state migration is required. Earlier releases kept all state in memory, so
+the first `0.3.0` start creates a new state file.
 
 ## Development
 

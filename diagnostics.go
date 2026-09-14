@@ -125,7 +125,7 @@ func (d *diagnosticReporter) complete(completion pluginapi.RequestCompletion) {
 // CPA's console formatter intentionally renders only a fixed field allowlist.
 // Repeat selected safe fields in the message so diagnostics stay useful there.
 func diagnosticMessage(fields map[string]any) string {
-	parts := []string{"codex-context-guard diagnostic"}
+	parts := []string{pluginID + " diagnostic"}
 	for _, key := range []string{
 		"action",
 		"protected_action",

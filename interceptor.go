@@ -9,23 +9,23 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/pluginapi"
 )
 
-type routeGuardPlugin struct {
+type switchGuardPlugin struct {
 	cfg         pluginConfig
 	state       *routeStateStore
 	diagnostics *diagnosticReporter
 	digester    opaqueDigester
 }
 
-var _ pluginapi.RequestInterceptor = (*routeGuardPlugin)(nil)
-var _ pluginapi.RequestLifecyclePlugin = (*routeGuardPlugin)(nil)
+var _ pluginapi.RequestInterceptor = (*switchGuardPlugin)(nil)
+var _ pluginapi.RequestLifecyclePlugin = (*switchGuardPlugin)(nil)
 
-func (p *routeGuardPlugin) InterceptRequestBeforeAuth(context.Context, pluginapi.RequestInterceptRequest) (pluginapi.RequestInterceptResponse, error) {
+func (p *switchGuardPlugin) InterceptRequestBeforeAuth(context.Context, pluginapi.RequestInterceptRequest) (pluginapi.RequestInterceptResponse, error) {
 	// The selected auth is unavailable before this hook, so changing state here
 	// would make retry/failover behavior unsafe.
 	return pluginapi.RequestInterceptResponse{}, nil
 }
 
-func (p *routeGuardPlugin) InterceptRequestAfterAuth(_ context.Context, req pluginapi.RequestInterceptRequest) (pluginapi.RequestInterceptResponse, error) {
+func (p *switchGuardPlugin) InterceptRequestAfterAuth(_ context.Context, req pluginapi.RequestInterceptRequest) (pluginapi.RequestInterceptResponse, error) {
 	if p == nil || !p.cfg.Enabled || !isCodexTarget(req) {
 		return pluginapi.RequestInterceptResponse{}, nil
 	}
@@ -86,7 +86,7 @@ func (p *routeGuardPlugin) InterceptRequestAfterAuth(_ context.Context, req plug
 	return pluginapi.RequestInterceptResponse{Body: updated}, nil
 }
 
-func (p *routeGuardPlugin) HandleRequestComplete(_ context.Context, completion pluginapi.RequestCompletion) error {
+func (p *switchGuardPlugin) HandleRequestComplete(_ context.Context, completion pluginapi.RequestCompletion) error {
 	if p == nil || !p.cfg.Enabled {
 		return nil
 	}
@@ -116,6 +116,8 @@ func isCodexTarget(req pluginapi.RequestInterceptRequest) bool {
 	return strings.EqualFold(strings.TrimSpace(req.ToFormat), "codex")
 }
 
+const resetRequiredErrorType = "codex_switch_guard_reset_required"
+
 func compactionTermination() pluginapi.RequestInterceptResponse {
 	return stateResetTermination(http.StatusConflict, "Codex compaction belongs to a different or unknown upstream credential. Retry on the original credential, or set compaction_policy: strip to continue without compaction.")
 }
@@ -123,12 +125,12 @@ func compactionTermination() pluginapi.RequestInterceptResponse {
 func stateResetTermination(status int, message string) pluginapi.RequestInterceptResponse {
 	body, errMarshal := json.Marshal(map[string]any{
 		"error": map[string]any{
-			"type":    "codex_context_guard_reset_required",
+			"type":    resetRequiredErrorType,
 			"message": message,
 		},
 	})
 	if errMarshal != nil {
-		body = []byte(`{"error":{"type":"codex_context_guard_reset_required","message":"Codex route-bound state must be reset."}}`)
+		body = []byte(`{"error":{"type":"` + resetRequiredErrorType + `","message":"Codex route-bound state must be reset."}}`)
 	}
 	return pluginapi.RequestInterceptResponse{
 		Terminate:       true,

@@ -1,11 +1,11 @@
 {
-  "id": "codex-context-guard",
-  "name": "Codex Context Guard",
-  "description": "Guards Codex route-bound reasoning and compaction state across credential or model changes, with restart-safe opaque route persistence.",
+  "id": "codex-switch-guard",
+  "name": "Codex Switch Guard",
+  "description": "Guards Codex route-bound reasoning and compaction state when CPA switches credentials or models, with restart-safe opaque route persistence.",
   "author": "Rat0323",
-  "repository": "https://github.com/Rat0323/cpa-plugin-codex-context-guard",
-  "version": "0.4.0",
-  "homepage": "https://github.com/Rat0323/cpa-plugin-codex-context-guard",
+  "repository": "https://github.com/Rat0323/cpa-plugin-codex-switch-guard",
+  "version": "0.3.0",
+  "homepage": "https://github.com/Rat0323/cpa-plugin-codex-switch-guard",
   "license": "MIT",
   "tags": ["Interceptor", "Security", "Codex", "Responses"]
 }

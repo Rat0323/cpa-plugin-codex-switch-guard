@@ -59,7 +59,7 @@ func TestInterceptorBlocksUnsafeCompactionByDefault(t *testing.T) {
 	if errIntercept != nil || !resp.Terminate || resp.StatusCode != http.StatusConflict {
 		t.Fatalf("compaction response = %#v, err=%v", resp, errIntercept)
 	}
-	if !strings.Contains(string(resp.ResponseBody), `"type":"codex_context_guard_reset_required"`) {
+	if !strings.Contains(string(resp.ResponseBody), `"type":"codex_switch_guard_reset_required"`) {
 		t.Fatalf("unexpected error response: %s", resp.ResponseBody)
 	}
 }

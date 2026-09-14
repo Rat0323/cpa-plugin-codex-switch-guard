@@ -1,13 +1,13 @@
-# Codex Context Guard
+# Codex Switch Guard
 
 [English](README.md) | [简体中文](README_CN.md)
 
-[![Build](https://github.com/Rat0323/cpa-plugin-codex-context-guard/actions/workflows/build.yml/badge.svg)](https://github.com/Rat0323/cpa-plugin-codex-context-guard/actions/workflows/build.yml)
-[![Latest release](https://img.shields.io/github/v/release/Rat0323/cpa-plugin-codex-context-guard)](https://github.com/Rat0323/cpa-plugin-codex-context-guard/releases/latest)
-[![License](https://img.shields.io/github/license/Rat0323/cpa-plugin-codex-context-guard)](LICENSE)
-[![Go version](https://img.shields.io/github/go-mod/go-version/Rat0323/cpa-plugin-codex-context-guard)](go.mod)
+[![Build](https://github.com/Rat0323/cpa-plugin-codex-switch-guard/actions/workflows/build.yml/badge.svg)](https://github.com/Rat0323/cpa-plugin-codex-switch-guard/actions/workflows/build.yml)
+[![Latest release](https://img.shields.io/github/v/release/Rat0323/cpa-plugin-codex-switch-guard)](https://github.com/Rat0323/cpa-plugin-codex-switch-guard/releases/latest)
+[![License](https://img.shields.io/github/license/Rat0323/cpa-plugin-codex-switch-guard)](LICENSE)
+[![Go version](https://img.shields.io/github/go-mod/go-version/Rat0323/cpa-plugin-codex-switch-guard)](go.mod)
 
-一个用于保障 Codex 凭据和模型故障转移安全的原生 CLIProxyAPI（CPA）拦截器。它会在同一路由上保留加密上下文，并阻止与路由绑定的状态进入不同或未知的上游。
+一个让 Codex 凭据和模型切换保持安全的原生 CLIProxyAPI（CPA）拦截器。它会在同一路由上保留加密上下文，并阻止与路由绑定的状态进入不同或未知的上游。
 
 ## 为什么需要它
 
@@ -21,7 +21,7 @@ Codex 请求可能包含由特定凭据和模型路由生成的加密 `reasoning
 -> 请求失败，或者会话必须从干净状态重新开始
 ```
 
-Codex Context Guard 会在请求到达所选上游之前补充这层路由感知保护。
+Codex Switch Guard 会在请求到达所选上游之前补充这层路由感知保护。
 
 ## 如何保护请求
 
@@ -34,7 +34,7 @@ Codex Context Guard 会在请求到达所选上游之前补充这层路由感知
 
 插件不会解密任何加密内容，也不会修改用户提示、工具参数、嵌套代理消息或模型选择。
 
-Codex Context Guard 是路由安全边界，不是跨凭据上下文迁移系统。它无法解密由某个凭据生成的状态，也无法为另一个凭据重新加密。
+Codex Switch Guard 是路由安全边界，不是跨凭据上下文迁移系统。它无法解密由某个凭据生成的状态，也无法为另一个凭据重新加密。
 
 ## 选择 compaction 策略
 
@@ -67,18 +67,18 @@ Codex compaction belongs to a different or unknown upstream credential.
 - 与 CPA 主机操作系统和架构匹配的发行文件。
 - 已在 CPA 配置中启用插件。
 
-可以从 CPA 插件市场安装，也可以从[最新发行版](https://github.com/Rat0323/cpa-plugin-codex-context-guard/releases/latest)下载对应压缩包。每个压缩包根目录包含一个平台库文件：
+可以从 CPA 插件市场安装，也可以从[最新发行版](https://github.com/Rat0323/cpa-plugin-codex-switch-guard/releases/latest)下载对应压缩包。每个压缩包根目录包含一个平台库文件：
 
 | 平台 | 架构 | 库文件 |
 | --- | --- | --- |
-| Windows | `amd64`、`arm64` | `codex-context-guard.dll` |
-| Linux | `amd64`、`arm64` | `codex-context-guard.so` |
-| macOS | `amd64`、`arm64` | `codex-context-guard.dylib` |
+| Windows | `amd64`、`arm64` | `codex-switch-guard.dll` |
+| Linux | `amd64`、`arm64` | `codex-switch-guard.so` |
+| macOS | `amd64`、`arm64` | `codex-switch-guard.dylib` |
 
 手动安装时，将库文件解压到 CPA 配置的 `plugins` 目录，然后重启 CPA。发行压缩包采用以下命名方式：
 
 ```text
-codex-context-guard_<version>_<goos>_<goarch>.zip
+codex-switch-guard_<version>_<goos>_<goarch>.zip
 ```
 
 发行版还包含用于校验压缩包的 `checksums.txt`，以及记录源码提交、库文件大小和 SHA-256 的 `artifact-manifest.json`。
@@ -104,10 +104,10 @@ codex-context-guard_<version>_<goos>_<goarch>.zip
 plugins:
   enabled: true
   configs:
-    codex-context-guard:
+    codex-switch-guard:
       enabled: true
       persistence_enabled: true
-      # state_file: C:/path/to/codex-context-guard-state.json
+      # state_file: C:/path/to/codex-switch-guard-state.json
       compaction_policy: block
       state_ttl: 4h
       max_sessions: 4096
@@ -119,7 +119,7 @@ plugins:
 | --- | --- | --- | --- |
 | `enabled` | `true` | `true`、`false` | 插件实例开关 |
 | `persistence_enabled` | `true` | `true`、`false` | CPA 重启后保留不透明路由绑定 |
-| `state_file` | `<UserConfigDir>/codex-context-guard/route-state-v1.json` | 文件路径 | 可选的持久化状态文件位置 |
+| `state_file` | `<UserConfigDir>/codex-switch-guard/route-state-v1.json` | 文件路径 | 可选的持久化状态文件位置 |
 | `compaction_policy` | `block` | `block`、`strip` | compaction 处理策略 |
 | `state_ttl` | `4h` | `1m` 到 `24h` | 路由绑定保留时间 |
 | `max_sessions` | `4096` | `1` 到 `65536` | 会话状态数量上限 |
@@ -141,7 +141,7 @@ plugins:
 
 CPA `7.2.130` 暴露的插件配置字段没有独立的默认值属性。因此，在保存覆盖值之前，管理页面可能将这些字段显示为空。字段为空或省略都是有效配置，插件会应用上表中的运行时默认值。
 
-CPA 插件优先级决定拦截器执行顺序。如果另一个请求拦截器会重写 Codex 请求体，应为 Codex Context Guard 设置更低的优先级，使其在重写后执行最终安全检查。
+CPA 插件优先级决定拦截器执行顺序。如果另一个请求拦截器会重写 Codex 请求体，应为 Codex Switch Guard 设置更低的优先级，使其在重写后执行最终安全检查。
 
 ## 诊断和隐私
 
@@ -181,16 +181,15 @@ CPA 插件优先级决定拦截器执行顺序。如果另一个请求拦截器�
 
 移除路由绑定状态可能减少当前轮次可用的 reasoning 上下文，但不会修改用户提示、工具、子代理消息或模型选择。若持久化被关闭、不可用或状态文件损坏后被恢复，受影响会话会按“路由未知”处理，并应用配置的 `block` 或 `strip` 策略。持久化解决的是重启后的路由识别，不会让加密状态跨凭据移植。
 
-## 迁移到 Codex Context Guard
+## 从 Codex Switch Safe 迁移
 
-`0.4.0` 将公开身份从 Codex Route Guard 更名为 Codex Context Guard。安装
-`codex-context-guard` 前，应从 CPA 插件目录删除旧库，并把配置键从
-`codex-route-guard` 改为 `codex-context-guard`，不要同时加载两个库。HTTP
-错误类型同步改为 `codex_context_guard_reset_required`。
+`0.3.0` 将插件从 Codex Switch Safe 更名为 Codex Switch Guard。安装
+`codex-switch-guard` 前，应从 CPA 插件目录删除旧的 `codex-switch-safe` 库，并把
+配置键从 `codex-switch-safe` 改为 `codex-switch-guard`，不要同时加载两个库。HTTP
+错误类型同步改为 `codex_switch_guard_reset_required`。
 
-使用默认持久化位置时，首次启动还会把 `codex-route-guard` 或
-`codex-switch-safe` 目录中的有效状态快照迁移到新目录。显式配置的
-`state_file` 路径不会被重定向。
+不需要迁移状态。早期版本的全部状态只保留在内存中，`0.3.0` 首次启动时会创建新的
+状态文件。
 
 ## 开发
 

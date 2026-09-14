@@ -119,7 +119,7 @@ func TestRigorousReproductionAndProtection(t *testing.T) {
 	fmt.Printf("💥 [BUG REPRODUCED]: Upstream failed with 400 Bad Request due to mismatched encrypted reasoning!\n")
 
 	fmt.Println("\n--------------------------------------------------------------------------------")
-	fmt.Println("  EXPERIMENT 2: WITH PLUGIN (codex-context-guard enabled)")
+	fmt.Println("  EXPERIMENT 2: WITH PLUGIN (codex-switch-guard enabled)")
 	fmt.Println("--------------------------------------------------------------------------------")
 
 	var diagnosticLogs []string
@@ -129,7 +129,7 @@ func TestRigorousReproductionAndProtection(t *testing.T) {
 	}
 
 	cfg := defaultPluginConfig()
-	plugin := &routeGuardPlugin{
+	plugin := &switchGuardPlugin{
 		cfg:         cfg,
 		state:       newRouteStateStore(cfg),
 		diagnostics: newDiagnosticReporter(cfg.Diagnostics, cfg.MaxPending, sink),

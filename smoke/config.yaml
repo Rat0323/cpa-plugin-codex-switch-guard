@@ -14,7 +14,7 @@ plugins:
   enabled: true
   dir: "./smoke/plugins"
   configs:
-    codex-context-guard:
+    codex-switch-guard:
       enabled: true
       persistence_enabled: true
       state_ttl: 4h

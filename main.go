@@ -5,11 +5,11 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/pluginapi"
 )
 
-var pluginVersion = "0.4.0"
+var pluginVersion = "0.3.0"
 
 const pluginSchemaVersion = pluginabi.SchemaVersion
 
-func buildPlugin(configYAML []byte) (*routeGuardPlugin, error) {
+func buildPlugin(configYAML []byte) (*switchGuardPlugin, error) {
 	cfg, errParse := parsePluginConfig(configYAML)
 	if errParse != nil {
 		return nil, errParse
@@ -18,7 +18,7 @@ func buildPlugin(configYAML []byte) (*routeGuardPlugin, error) {
 	if cfg.Enabled && cfg.PersistenceEnabled {
 		state = newPersistentRouteStateStore(cfg)
 	}
-	plugin := &routeGuardPlugin{
+	plugin := &switchGuardPlugin{
 		cfg:         cfg,
 		state:       state,
 		diagnostics: newDiagnosticReporter(cfg.Diagnostics, cfg.MaxPending, hostDiagnosticSink),
@@ -35,7 +35,7 @@ func pluginMetadata() pluginapi.Metadata {
 		Name:             pluginName,
 		Version:          pluginVersion,
 		Author:           "Rat0323",
-		GitHubRepository: "https://github.com/Rat0323/cpa-plugin-codex-context-guard",
+		GitHubRepository: "https://github.com/Rat0323/cpa-plugin-codex-switch-guard",
 		ConfigFields: []pluginapi.ConfigField{
 			{
 				Name:        "persistence_enabled",

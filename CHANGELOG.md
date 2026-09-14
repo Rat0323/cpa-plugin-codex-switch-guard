@@ -1,43 +1,12 @@
 # Changelog
 
-All notable user-facing changes to Codex Context Guard are documented here.
+All notable user-facing changes to Codex Switch Guard are documented here.
 The project follows semantic versioning, and release automation publishes the
 matching version section verbatim.
 
 ## [Unreleased]
 
-### Fixed
-
-- Stripped retired route-bound items with the persisted digest key after a CPA
-  restart. The plugin previously re-fingerprinted items with a fresh process key,
-  so a same-route replay carrying a retired item could return HTTP 409 instead
-  of removing only that item.
-
-## [0.4.0] - 2026-09-15
-
-### Changed
-
-- Renamed the public plugin identity, configuration key, release artifacts, and
-  diagnostics from Codex Route Guard / `codex-route-guard` to Codex Context Guard /
-  `codex-context-guard`.
-- Renamed the reset-required HTTP error type to
-  `codex_context_guard_reset_required`.
-
-### Compatibility
-
-- The default state loader migrates snapshots from the previous
-  `codex-route-guard` and `codex-switch-safe` directories before creating the
-  new `codex-context-guard` state directory.
-- Explicit `state_file` paths are unchanged and are never redirected.
-
-### Migration
-
-- Remove the old library before installing `codex-context-guard`; do not load
-  both plugin IDs at the same time.
-- Rename the CPA configuration key to `codex-context-guard` and update log
-  filters or clients that match the plugin ID or reset-required error type.
-
-## [0.3.0] - 2026-09-14
+## [0.3.0] - 2026-09-15
 
 ### Added
 
@@ -52,21 +21,22 @@ matching version section verbatim.
 ### Changed
 
 - Renamed the project, plugin ID, configuration key, release artifacts, and
-  diagnostics from Codex Switch Safe / `codex-switch-safe` to Codex Route Guard /
-  `codex-route-guard`.
+  diagnostics from Codex Switch Safe / `codex-switch-safe` to Codex Switch
+  Guard / `codex-switch-guard`.
 - Renamed the reset-required HTTP error type to
-  `codex_route_guard_reset_required`.
+  `codex_switch_guard_reset_required`.
 - Clarified that `block` makes loss of unsafe compaction context explicit,
   while `strip` favors failover availability by accepting that loss.
 
 ### Migration
 
 - Remove the old `codex-switch-safe` library before installing the new
-  `codex-route-guard` library. Do not load both at once.
+  `codex-switch-guard` library. Do not load both at once.
 - Rename the CPA configuration key from `codex-switch-safe` to
-  `codex-route-guard`.
-- Update log filters from `codex-switch-safe` to `codex-route-guard` and update
-  clients that match the reset-required error type.
+  `codex-switch-guard`.
+- Update log filters from `codex-switch-safe` to `codex-switch-guard` and
+  update clients that match the reset-required error type.
+- No state migration is required. Earlier releases kept all state in memory.
 
 ## [0.2.3] - 2026-09-05
 
@@ -131,7 +101,7 @@ Download the archive matching the CPA host together with `checksums.txt` and
 then compare it with the matching entry in `checksums.txt`. After verification,
 replace the existing plugin library and restart CPA.
 
-See the [installation guide](https://github.com/Rat0323/cpa-plugin-codex-route-guard#quick-start)
+See the [installation guide](https://github.com/Rat0323/cpa-plugin-codex-switch-guard#quick-start)
 for platform library names and configuration details.
 
 The checksum and manifest files verify artifact integrity and identify the
@@ -142,7 +112,7 @@ source commit; they are not signed provenance or reproducible-build attestations
 To roll back, install the matching `0.2.0` archive and restart CPA. Process-local
 routing state is reset when CPA restarts.
 
-Full diff: [v0.2.0...v0.2.1](https://github.com/Rat0323/cpa-plugin-codex-route-guard/compare/v0.2.0...v0.2.1)
+Full diff: [v0.2.0...v0.2.1](https://github.com/Rat0323/cpa-plugin-codex-switch-guard/compare/v0.2.0...v0.2.1)
 
 ## [0.2.0] - 2026-08-15
 
@@ -197,12 +167,11 @@ Full diff: [v0.2.0...v0.2.1](https://github.com/Rat0323/cpa-plugin-codex-route-g
 Initial release. This version is deprecated because retry and session edge cases
 were corrected in `v0.1.1`.
 
-[Unreleased]: https://github.com/Rat0323/cpa-plugin-codex-context-guard/compare/v0.4.0...HEAD
-[0.4.0]: https://github.com/Rat0323/cpa-plugin-codex-context-guard/compare/v0.3.0...v0.4.0
-[0.3.0]: https://github.com/Rat0323/cpa-plugin-codex-route-guard/compare/v0.2.3...v0.3.0
-[0.2.3]: https://github.com/Rat0323/cpa-plugin-codex-route-guard/compare/v0.2.2...v0.2.3
-[0.2.2]: https://github.com/Rat0323/cpa-plugin-codex-route-guard/compare/v0.2.1...v0.2.2
-[0.2.1]: https://github.com/Rat0323/cpa-plugin-codex-route-guard/compare/v0.2.0...v0.2.1
-[0.2.0]: https://github.com/Rat0323/cpa-plugin-codex-route-guard/releases/tag/v0.2.0
-[0.1.1]: https://github.com/Rat0323/cpa-plugin-codex-route-guard/releases/tag/v0.1.1
-[0.1.0]: https://github.com/Rat0323/cpa-plugin-codex-route-guard/releases/tag/v0.1.0
+[Unreleased]: https://github.com/Rat0323/cpa-plugin-codex-switch-guard/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/Rat0323/cpa-plugin-codex-switch-guard/compare/v0.2.3...v0.3.0
+[0.2.3]: https://github.com/Rat0323/cpa-plugin-codex-switch-guard/compare/v0.2.2...v0.2.3
+[0.2.2]: https://github.com/Rat0323/cpa-plugin-codex-switch-guard/compare/v0.2.1...v0.2.2
+[0.2.1]: https://github.com/Rat0323/cpa-plugin-codex-switch-guard/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/Rat0323/cpa-plugin-codex-switch-guard/releases/tag/v0.2.0
+[0.1.1]: https://github.com/Rat0323/cpa-plugin-codex-switch-guard/releases/tag/v0.1.1
+[0.1.0]: https://github.com/Rat0323/cpa-plugin-codex-switch-guard/releases/tag/v0.1.0

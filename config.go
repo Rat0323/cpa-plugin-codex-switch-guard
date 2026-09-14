@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	pluginID   = "codex-context-guard"
-	pluginName = "Codex Context Guard"
+	pluginID   = "codex-switch-guard"
+	pluginName = "Codex Switch Guard"
 
 	defaultStateTTL    = 4 * time.Hour
 	defaultMaxSessions = 4096
