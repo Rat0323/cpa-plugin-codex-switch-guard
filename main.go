@@ -5,7 +5,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/pluginapi"
 )
 
-var pluginVersion = "0.3.1"
+var pluginVersion = "0.4.0"
 
 const pluginSchemaVersion = pluginabi.SchemaVersion
 
@@ -48,7 +48,7 @@ func pluginMetadata() pluginapi.Metadata {
 			{
 				Name:        "state_ttl",
 				Type:        pluginapi.ConfigFieldTypeString,
-				Description: "How long a conversation route binding stays in memory. Accepts 1m through 24h; default: 4h.",
+				Description: "How long a conversation route binding stays trusted in memory or optional persistent state. Accepts 1m through 24h; default: 4h.",
 			},
 			{
 				Name:        "max_sessions",

@@ -38,8 +38,9 @@ the selected upstream.
   for availability.
 - Commits route changes only after CPA reports a successful request lifecycle
   outcome; failed retries and failovers do not advance the route.
-- Keeps bounded, process-local state and emits privacy-safe diagnostics through
-  CPA's existing logging system.
+- Keeps bounded state in memory by default, with optional authenticated
+  persistence for normal CPA restarts, and emits privacy-safe diagnostics
+  through CPA's existing logging system.
 - Ignores non-Codex targets and leaves unrelated request content untouched.
 
 The plugin never decrypts encrypted content and does not alter user prompts,
@@ -130,6 +131,7 @@ plugins:
     codex-switch-safe:
       enabled: true
       compaction_policy: block
+      persistence_enabled: false
       state_ttl: 4h
       max_sessions: 4096
       max_pending: 8192
@@ -140,6 +142,8 @@ plugins:
 | --- | --- | --- | --- |
 | `enabled` | `true` | `true`, `false` | Plugin instance toggle |
 | `compaction_policy` | `block` | `block`, `strip` | Compaction handling |
+| `persistence_enabled` | `false` | `true`, `false` | Keep committed opaque route state across CPA restarts |
+| `state_file` | User config directory | Absolute file path | Optional persisted-state location |
 | `state_ttl` | `4h` | `1m` through `24h` | Route binding lifetime |
 | `max_sessions` | `4096` | `1` through `65536` | Session entry cap |
 | `max_pending` | `8192` | `1` through `65536` | Pending attempt cap |
@@ -176,6 +180,39 @@ falling back to a different policy.
 The CPA plugin priority controls interceptor order. If another request
 interceptor rewrites Codex request bodies, give Codex Switch Safe a lower
 priority so it runs afterward and performs the final safety check.
+
+### Optional persistence
+
+Set `persistence_enabled: true` to retain committed route bindings, safety
+barriers, taint flags, and invalidation metadata across normal CPA restarts.
+Persistence is off by default, so existing installations continue to write no
+files.
+
+When `state_file` is omitted, state is stored in the user configuration
+directory:
+
+```text
+Windows: %APPDATA%\codex-switch-safe\route-state-v1.json
+Linux/macOS: $XDG_CONFIG_HOME/codex-switch-safe/route-state-v1.json
+           (or ~/.config/codex-switch-safe/route-state-v1.json)
+```
+
+A separate `route-state-v1.json.key` file contains a random 32-byte master key.
+Fingerprint and integrity keys are derived from it with domain separation. The
+state file contains only opaque HMAC fingerprints, timestamps, sequence
+numbers, and safety flags; it never contains request bodies, encrypted content,
+raw session IDs, auth IDs, model names, or conversation text.
+
+Saves are coalesced and written through a temporary file, flushed, and renamed
+atomically. Pending request state is never persisted. If the key is missing,
+or the state file is damaged, tampered with, too large, or unreadable, the
+plugin starts from conservative unknown-route handling and reports the
+persistence error through the management status endpoint. Persistence failures
+never weaken route protection or cause unsafe state to be sent upstream.
+
+Setting `persistence_enabled: false` stops reading and writing the state file,
+but does not delete existing files. Remove the state and key files manually when
+you no longer want the data.
 
 ### Recommended CPA routing affinity
 
@@ -215,10 +252,10 @@ include:
 - Raw selected-auth, session, thread, or conversation IDs.
 - Request bodies, encrypted content, reasoning text, or user conversation text.
 
-The plugin has no network access and does not write files. It stores routing
-state only in memory and uses a random process-local HMAC key for opaque item
-fingerprints and diagnostic references. References cannot be correlated across
-CPA restarts.
+The plugin has no network access. Persistence is disabled by default; when
+enabled, it writes only the opaque authenticated state described above. In the
+default process-local mode, route and item fingerprints use a random key that
+cannot be correlated across CPA restarts.
 
 ### Management status
 
@@ -230,10 +267,12 @@ GET /v0/management/plugins/codex-switch-safe/status
 
 The JSON response reports the plugin version and uptime, effective safe
 configuration, current counts of sessions/pending/tainted/overflow state, and
-cumulative protection-action and tracked-completion counters. It contains no
-raw request IDs, session IDs, selected-auth IDs, route fingerprints, request
-bodies, or encrypted content. The route is registered as a Management API route
-and is not exposed through CPA's unauthenticated plugin resource routes.
+cumulative protection-action and tracked-completion counters. It also reports
+whether persistence is enabled and healthy, including the last persistence
+error without exposing the state file path. It contains no raw request IDs,
+session IDs, selected-auth IDs, route fingerprints, request bodies, or encrypted
+content. The route is registered as a Management API route and is not exposed
+through CPA's unauthenticated plugin resource routes.
 
 ## Safety model
 
@@ -249,9 +288,10 @@ and is not exposed through CPA's unauthenticated plugin resource routes.
 - **Concurrency isolation:** independent execution sessions remain isolated.
   Same-session cross-route concurrency taints the session until a clean
   successful turn establishes a new route.
-- **Bounded memory:** configurable TTL and entry caps constrain process-local
-  state. An overflowed retired-item barrier causes conservative full stripping
-  for that session until its state expires.
+- **Bounded state:** configurable TTL and entry caps constrain state in memory
+  and in the optional authenticated state file. An overflowed retired-item
+  barrier causes conservative full stripping for that session until its state
+  expires.
 
 The plugin does not serialize model requests. It deliberately prefers a clean
 continuation over guessing which concurrent result is valid.
@@ -265,7 +305,9 @@ clean.
 
 Removing route-bound state can reduce available reasoning context for a turn,
 but it does not change the user prompt, tools, subagent messages, or model
-selection. Process-local routing state is reset whenever CPA restarts.
+selection. With persistence disabled, routing state is reset whenever CPA
+restarts. With persistence enabled, committed opaque route state survives normal
+restarts, but pending requests and TTL-expired sessions still do not.
 
 ## Development
 

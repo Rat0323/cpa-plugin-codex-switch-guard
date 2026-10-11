@@ -6,6 +6,42 @@ matching version section verbatim.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-11
+
+### Added
+
+- Added optional route-state persistence with `persistence_enabled` (default
+  `false`) and an optional absolute `state_file`. When enabled, committed opaque
+  route bindings, safety barriers, taint flags, and invalidation metadata
+  survive normal CPA restarts. Pending requests are never persisted.
+- Added persistence health to the authenticated management status endpoint. The
+  response reports whether persistence is enabled and healthy, and exposes the
+  last persistence error without disclosing the state file path.
+
+### Security
+
+- Persistent state contains only opaque HMAC fingerprints, timestamps, sequence
+  numbers, and safety flags. It never contains request bodies, encrypted
+  content, raw session IDs, auth IDs, model names, or conversation text.
+- Stored state uses a separate random 32-byte key file, domain-separated
+  fingerprint and integrity keys, strict schema validation, TTL expiry, and an
+  integrity MAC. Writes are coalesced, flushed, and atomically renamed. Missing,
+  damaged, tampered, oversized, or unreadable state fails closed to conservative
+  unknown-route handling; persistence errors never weaken route protection.
+
+### Compatibility and upgrade
+
+- Existing configurations are unchanged and continue to write no files. Set
+  `persistence_enabled: true` to opt in.
+- When `state_file` is omitted, state is stored under
+  `codex-switch-safe/route-state-v1.json` in the user configuration directory,
+  with a separate `route-state-v1.json.key` file.
+- To stop using persistence, set `persistence_enabled: false`. Existing state
+  and key files remain on disk and can be removed manually.
+- To roll back, install the matching `v0.3.1` archive and restart CPA. That
+  version ignores the optional state files; remove them manually if you no
+  longer want the data.
+
 ## [0.3.1] - 2026-10-11
 
 ### Fixed
@@ -220,7 +256,8 @@ Full diff: [v0.2.0...v0.2.1](https://github.com/Rat0323/cpa-plugin-codex-switch-
 Initial release. This version is deprecated because retry and session edge cases
 were corrected in `v0.1.1`.
 
-[Unreleased]: https://github.com/Rat0323/cpa-plugin-codex-switch-safe/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/Rat0323/cpa-plugin-codex-switch-safe/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/Rat0323/cpa-plugin-codex-switch-safe/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/Rat0323/cpa-plugin-codex-switch-safe/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/Rat0323/cpa-plugin-codex-switch-safe/compare/v0.2.3...v0.3.0
 [0.2.3]: https://github.com/Rat0323/cpa-plugin-codex-switch-safe/compare/v0.2.2...v0.2.3
