@@ -36,6 +36,7 @@ const (
 
 type pluginConfig struct {
 	Enabled             bool   `yaml:"enabled"`
+	Priority            int    `yaml:"priority"`
 	StateTTLRaw         string `yaml:"state_ttl"`
 	MaxSessions         int    `yaml:"max_sessions"`
 	MaxPending          int    `yaml:"max_pending"`

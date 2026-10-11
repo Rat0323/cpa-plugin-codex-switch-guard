@@ -26,6 +26,7 @@ type managementStatus struct {
 		MaxSessions      int    `json:"max_sessions"`
 		MaxPending       int    `json:"max_pending"`
 		Diagnostics      string `json:"diagnostics"`
+		Priority         int    `json:"priority"`
 	} `json:"config"`
 	State    routeStateSnapshot `json:"state"`
 	Counters protectionCounters `json:"counters"`
@@ -64,6 +65,7 @@ func (p *switchSafePlugin) HandleManagement(_ context.Context, req pluginapi.Man
 		status.Config.MaxSessions = p.cfg.MaxSessions
 		status.Config.MaxPending = p.cfg.MaxPending
 		status.Config.Diagnostics = string(p.cfg.Diagnostics)
+		status.Config.Priority = p.cfg.Priority
 		status.State = p.state.snapshot()
 		status.Counters = p.metrics.snapshot()
 		status.UptimeSeconds = int64(p.metrics.uptime(time.Now()) / time.Second)
