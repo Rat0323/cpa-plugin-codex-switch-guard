@@ -177,6 +177,24 @@ The CPA plugin priority controls interceptor order. If another request
 interceptor rewrites Codex request bodies, give Codex Switch Safe a lower
 priority so it runs afterward and performs the final safety check.
 
+### Recommended CPA routing affinity
+
+On CPA versions that provide universal session affinity, enable it to reduce
+credential switches during normal operation:
+
+```yaml
+routing:
+  strategy: round-robin
+  session-affinity: true
+  session-affinity-ttl: "4h"
+  session-affinity-subagents: true
+```
+
+Keep `routing.session-affinity-ttl` aligned with this plugin's `state_ttl`.
+Affinity is the primary continuity mechanism; Codex Switch Safe remains the
+last-line guard when failover, expiry, or manual routing still changes the
+selected credential.
+
 ## Diagnostics and privacy
 
 | Level | Records |

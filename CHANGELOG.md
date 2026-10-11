@@ -6,6 +6,33 @@ matching version section verbatim.
 
 ## [Unreleased]
 
+### Added
+
+- Added native-library smoke coverage that loads every platform build and
+  exercises registration, interception, completion, buffer release, and
+  shutdown through the exported CPA ABI before packaging.
+
+### Changed
+
+- Prefer CPA `canonical_session_id` when available so plugin state follows the
+  host's reconciled fork and subagent session boundaries, while retaining all
+  existing fallbacks for older hosts.
+- Documented CPA universal session affinity as the primary continuity layer,
+  with this plugin acting as the last-line route-state guard.
+
+### Fixed
+
+- Bounded retired-item fingerprint processing under overflow so crafted large
+  requests cannot trigger quadratic eviction while holding the global state
+  lock.
+- Rejected unknown plugin configuration fields instead of silently accepting
+  misspelled policy names.
+
+### Tests
+
+- Added fail-closed compaction coverage for missing selected-auth and session
+  identities under both `block` and `strip` policies.
+
 ## [0.2.3] - 2026-09-05
 
 ### Fixed

@@ -139,6 +139,20 @@ CPA `7.2.130` 暴露的插件配置字段没有独立的默认值属性。因此
 
 CPA 插件优先级决定拦截器执行顺序。如果另一个请求拦截器会重写 Codex 请求体，应为 Codex Switch Safe 设置更低的优先级，使其在重写后执行最终安全检查。
 
+### 推荐启用 CPA 会话亲和
+
+在支持通用会话亲和的 CPA 版本中，建议启用它，以减少正常运行时的凭据切换：
+
+```yaml
+routing:
+  strategy: round-robin
+  session-affinity: true
+  session-affinity-ttl: "4h"
+  session-affinity-subagents: true
+```
+
+建议让 `routing.session-affinity-ttl` 与本插件的 `state_ttl` 保持一致。会话亲和负责主要的连续性保障；当故障转移、过期或手动路由仍然改变所选凭据时，Codex Switch Safe 作为最后一道安全保护。
+
 ## 诊断和隐私
 
 | 级别 | 记录内容 |
