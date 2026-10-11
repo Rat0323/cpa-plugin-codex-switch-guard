@@ -263,6 +263,9 @@ func (s *routeStateStore) retireItemsLocked(session sessionRouteState, fingerpri
 		session.UpdatedAt = now
 		return session
 	}
+	if len(fingerprints) > maxRetiredItemFingerprintsPerSession {
+		return markRetiredOverflow(session, now)
+	}
 	if session.RetiredItems == nil {
 		session.RetiredItems = make(map[string]uint64)
 	}
@@ -291,6 +294,9 @@ func (s *routeStateStore) retireItemsLocked(session sessionRouteState, fingerpri
 func boundedUniqueFingerprints(fingerprints []string) ([]string, bool) {
 	if len(fingerprints) == 0 {
 		return nil, false
+	}
+	if len(fingerprints) > maxRetiredItemFingerprintsPerSession {
+		return nil, true
 	}
 	unique := make([]string, 0, min(len(fingerprints), maxRetiredItemFingerprintsPerSession))
 	seen := make(map[string]struct{}, min(len(fingerprints), maxRetiredItemFingerprintsPerSession))

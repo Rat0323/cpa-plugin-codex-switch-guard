@@ -427,6 +427,25 @@ func TestRouteStateBoundsPendingRetiredItemFingerprints(t *testing.T) {
 	}
 }
 
+func TestRouteStateTreatsOversizedDuplicateFingerprintInputAsOverflow(t *testing.T) {
+	store := newRouteStateStore(testConfig())
+	seedCommittedRoute(store, "session-a", routeFingerprint{Digest: "route-a"})
+	fingerprints := make([]string, maxRetiredItemFingerprintsPerSession+1)
+	for index := range fingerprints {
+		fingerprints[index] = "repeated-item"
+	}
+
+	store.prepare("switch", "session-a", routeFingerprint{Digest: "route-b"}, true, stateSignals{
+		HasReasoning:     true,
+		ItemFingerprints: fingerprints,
+	})
+	store.complete(pluginapi.RequestCompletion{RequestID: "switch", Outcome: pluginapi.RequestCompletionSucceeded})
+	state := store.sessions["session-a"]
+	if !state.RetiredOverflow || len(state.RetiredItems) != 0 {
+		t.Fatalf("oversized duplicate input did not enter conservative overflow state: %#v", state)
+	}
+}
+
 func testConfig() pluginConfig {
 	cfg := defaultPluginConfig()
 	cfg.StateTTL = time.Hour
