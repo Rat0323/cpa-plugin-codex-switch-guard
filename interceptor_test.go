@@ -9,8 +9,8 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/pluginapi"
 )
 
-func TestInterceptorPreservesSameRouteAndStripsChangedRoute(t *testing.T) {
-	p, errBuild := buildPlugin([]byte("enabled: true\npersistence_enabled: false\n"))
+func TestInterceptorBlocksUnsafeReasoningByDefault(t *testing.T) {
+	p, errBuild := buildPlugin([]byte("enabled: true\npersistence_enabled: false\ncompaction_policy: block\n"))
 	if errBuild != nil {
 		t.Fatal(errBuild)
 	}
@@ -28,14 +28,35 @@ func TestInterceptorPreservesSameRouteAndStripsChangedRoute(t *testing.T) {
 
 	changed := codexRequest("req-3", "session-a", "thread-a", "auth-b", "gpt-5.6-b", `{"previous_response_id":"resp-a","input":[{"type":"reasoning","encrypted_content":"foreign"},{"type":"agent_message","author":"/root","recipient":"/root/child","content":[{"type":"encrypted_content","encrypted_content":"child"}]}]}`)
 	resp, errIntercept := p.InterceptRequestAfterAuth(nil, changed)
+	if errIntercept != nil || !resp.Terminate || resp.StatusCode != http.StatusConflict {
+		t.Fatalf("changed response = %#v, err=%v", resp, errIntercept)
+	}
+	if !strings.Contains(string(resp.ResponseBody), `"reasoning_items_would_be_removed":1`) ||
+		!strings.Contains(string(resp.ResponseBody), `"previous_response_id_would_be_removed":true`) {
+		t.Fatalf("unexpected block details: %s", resp.ResponseBody)
+	}
+	if !strings.Contains(string(resp.ResponseBody), "before anything was removed") {
+		t.Fatalf("unexpected block message: %s", resp.ResponseBody)
+	}
+}
+
+func TestInterceptorStripsChangedRouteWhenConfigured(t *testing.T) {
+	p, errBuild := buildPlugin([]byte("enabled: true\npersistence_enabled: false\ncompaction_policy: strip\n"))
+	if errBuild != nil {
+		t.Fatal(errBuild)
+	}
+	first := codexRequest("req-1", "session-a", "thread-a", "auth-a", "gpt-5.6-a", `{"input":[{"type":"message","role":"user","content":"hi"}]}`)
+	if resp, errIntercept := p.InterceptRequestAfterAuth(nil, first); errIntercept != nil || resp.Terminate || len(resp.Body) != 0 {
+		t.Fatalf("first response = %#v, err=%v", resp, errIntercept)
+	}
+	p.HandleRequestComplete(nil, pluginapi.RequestCompletion{RequestID: "req-1", Outcome: pluginapi.RequestCompletionSucceeded})
+
+	changed := codexRequest("req-3", "session-a", "thread-a", "auth-b", "gpt-5.6-b", `{"previous_response_id":"resp-a","input":[{"type":"reasoning","encrypted_content":"foreign"},{"type":"agent_message","author":"/root","recipient":"/root/child","content":[{"type":"encrypted_content","encrypted_content":"child"}]}]}`)
+	resp, errIntercept := p.InterceptRequestAfterAuth(nil, changed)
 	if errIntercept != nil || resp.Terminate || len(resp.Body) == 0 {
 		t.Fatalf("changed response = %#v, err=%v", resp, errIntercept)
 	}
-	var body map[string]any
-	if errDecode := json.Unmarshal(resp.Body, &body); errDecode != nil {
-		t.Fatal(errDecode)
-	}
-	if _, exists := body["previous_response_id"]; exists {
+	if _, exists := jsonField(resp.Body, "previous_response_id"); exists {
 		t.Fatalf("previous_response_id survived: %s", resp.Body)
 	}
 	if strings.Contains(string(resp.Body), `"type":"reasoning"`) {
@@ -86,7 +107,38 @@ func TestInterceptorStripsUnsafeCompactionWhenConfigured(t *testing.T) {
 }
 
 func TestInterceptorRemovesRetiredReasoningOnLaterSameRouteRequest(t *testing.T) {
-	p, errBuild := buildPlugin([]byte("enabled: true\npersistence_enabled: false\n"))
+	p, errBuild := buildPlugin([]byte("enabled: true\npersistence_enabled: false\ncompaction_policy: strip\n"))
+	if errBuild != nil {
+		t.Fatal(errBuild)
+	}
+	seed := codexRequest("seed-a", "session-a", "thread-a", "auth-a", "gpt-5.6", `{"input":[{"type":"message","role":"user","content":"start"}]}`)
+	p.InterceptRequestAfterAuth(nil, seed)
+	p.HandleRequestComplete(nil, pluginapi.RequestCompletion{RequestID: "seed-a", Outcome: pluginapi.RequestCompletionSucceeded})
+
+	switchRequest := codexRequest("switch-b", "session-a", "thread-a", "auth-b", "gpt-5.6", `{"previous_response_id":"resp-a","input":[{"type":"reasoning","id":"rs-from-a","encrypted_content":"foreign"},{"type":"message","role":"user","content":"switch"}]}`)
+	switchResponse, errSwitch := p.InterceptRequestAfterAuth(nil, switchRequest)
+	if errSwitch != nil || switchResponse.Terminate || !strings.Contains(string(switchResponse.Body), "switch") || strings.Contains(string(switchResponse.Body), "rs-from-a") {
+		t.Fatalf("switch response = %#v, err=%v", switchResponse, errSwitch)
+	}
+	p.HandleRequestComplete(nil, pluginapi.RequestCompletion{RequestID: "switch-b", Outcome: pluginapi.RequestCompletionSucceeded})
+	// Establish the retired-item barrier in strip mode, then verify that block
+	// mode refuses to replay that retired item on the confirmed route.
+	p.cfg.CompactionPolicy = compactionPolicyBlock
+	p.state.cfg.CompactionPolicy = compactionPolicyBlock
+
+	replay := codexRequest("same-b", "session-a", "thread-a", "auth-b", "gpt-5.6", `{"previous_response_id":"resp-b","input":[{"type":"reasoning","id":"rs-from-a","encrypted_content":"foreign"},{"type":"reasoning","id":"rs-from-b","encrypted_content":"current"},{"type":"message","role":"user","content":"continue"}]}`)
+	replayResponse, errReplay := p.InterceptRequestAfterAuth(nil, replay)
+	if errReplay != nil || !replayResponse.Terminate || replayResponse.StatusCode != http.StatusConflict {
+		t.Fatalf("replay response = %#v, err=%v", replayResponse, errReplay)
+	}
+	if !strings.Contains(string(replayResponse.ResponseBody), `"reasoning_items_would_be_removed":1`) ||
+		strings.Contains(string(replayResponse.ResponseBody), `"previous_response_id_would_be_removed":true`) {
+		t.Fatalf("unexpected retired-item block details: %s", replayResponse.ResponseBody)
+	}
+}
+
+func TestInterceptorStripsRetiredReasoningWhenConfigured(t *testing.T) {
+	p, errBuild := buildPlugin([]byte("enabled: true\npersistence_enabled: false\ncompaction_policy: strip\n"))
 	if errBuild != nil {
 		t.Fatal(errBuild)
 	}
@@ -127,9 +179,18 @@ func TestInterceptorFailClosedWithoutSelectedAuthOrSession(t *testing.T) {
 		Body:      []byte(`{"previous_response_id":"resp","input":[{"type":"reasoning","encrypted_content":"opaque"}]}`),
 	}
 	resp, errIntercept := p.InterceptRequestAfterAuth(nil, request)
-	if errIntercept != nil || resp.Terminate || len(resp.Body) == 0 || strings.Contains(string(resp.Body), "encrypted_content") {
+	if errIntercept != nil || !resp.Terminate || resp.StatusCode != http.StatusConflict || strings.Contains(string(resp.ResponseBody), "encrypted_content") {
 		t.Fatalf("fail-closed response = %#v, err=%v", resp, errIntercept)
 	}
+}
+
+func jsonField(raw []byte, field string) (any, bool) {
+	var payload map[string]any
+	if errDecode := json.Unmarshal(raw, &payload); errDecode != nil {
+		return nil, false
+	}
+	value, exists := payload[field]
+	return value, exists
 }
 
 func codexRequest(requestID, sessionID, threadID, authID, model, body string) pluginapi.RequestInterceptRequest {

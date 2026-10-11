@@ -17,7 +17,7 @@ import (
 
 func TestPluginUsesPersistedDigesterAcrossRestart(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "route-state.json")
-	config := []byte(fmt.Sprintf("persistence_enabled: true\nstate_file: '%s'\n", strings.ReplaceAll(path, "'", "''")))
+	config := []byte(fmt.Sprintf("persistence_enabled: true\ncompaction_policy: strip\nstate_file: '%s'\n", strings.ReplaceAll(path, "'", "''")))
 
 	first, errBuild := buildPlugin(config)
 	if errBuild != nil {
@@ -53,7 +53,7 @@ func TestPluginUsesPersistedDigesterAcrossRestart(t *testing.T) {
 
 func TestPluginSanitizesRetiredItemsWithPersistedDigesterAfterRestart(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "route-state.json")
-	config := []byte(fmt.Sprintf("persistence_enabled: true\nstate_file: '%s'\n", strings.ReplaceAll(path, "'", "''")))
+	config := []byte(fmt.Sprintf("persistence_enabled: true\ncompaction_policy: strip\nstate_file: '%s'\n", strings.ReplaceAll(path, "'", "''")))
 	persistedDigester := newOpaqueDigester([]byte("01234567890123456789012345678901"))
 	now := time.Now().UTC()
 	replay := codexRequest("replay", "session-secret", "thread-secret", "auth-b", "gpt-5.6", `{"previous_response_id":"resp-current","input":[{"type":"reasoning","id":"rs-retired","encrypted_content":"foreign"},{"type":"reasoning","id":"rs-current","encrypted_content":"current"},{"type":"message","role":"user","content":"continue"}]}`)

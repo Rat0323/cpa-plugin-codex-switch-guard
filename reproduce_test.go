@@ -129,6 +129,7 @@ func TestRigorousReproductionAndProtection(t *testing.T) {
 	}
 
 	cfg := defaultPluginConfig()
+	cfg.CompactionPolicy = compactionPolicyStrip
 	plugin := &switchGuardPlugin{
 		cfg:         cfg,
 		state:       newRouteStateStore(cfg),

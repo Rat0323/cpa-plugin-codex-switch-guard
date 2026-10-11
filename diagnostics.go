@@ -140,6 +140,9 @@ func diagnosticMessage(fields map[string]any) string {
 		"reasoning_removed",
 		"compaction_removed",
 		"previous_response_id_removed",
+		"reasoning_blocked",
+		"compaction_blocked",
+		"previous_response_id_blocked",
 		"stream",
 		"reason",
 	} {
@@ -193,7 +196,8 @@ func completionFields(fields map[string]any) map[string]any {
 	for _, key := range []string{
 		"plugin_id", "request_id", "session_ref", "route_ref", "route_relation",
 		"route_known", "reasoning_removed", "compaction_removed",
-		"previous_response_id_removed", "stream",
+		"previous_response_id_removed", "reasoning_blocked", "compaction_blocked",
+		"previous_response_id_blocked", "stream",
 	} {
 		if value, exists := fields[key]; exists {
 			kept[key] = value

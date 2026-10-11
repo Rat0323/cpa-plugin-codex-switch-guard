@@ -171,7 +171,12 @@ func TestDiagnosticsCompletionUsesLatestRetryAction(t *testing.T) {
 	reporter.beginRequest(req.RequestID)
 	reporter.action("info", "strip_route_state", req, map[string]any{"session_ref": "first-ref"})
 	reporter.beginRequest(req.RequestID)
-	reporter.action("warn", "block_compaction", req, map[string]any{"session_ref": "second-ref"})
+	reporter.action("warn", "block_route_state", req, map[string]any{
+		"session_ref":                  "second-ref",
+		"reasoning_blocked":            1,
+		"compaction_blocked":           0,
+		"previous_response_id_blocked": true,
+	})
 	reporter.complete(pluginapi.RequestCompletion{RequestID: "retry", Outcome: pluginapi.RequestCompletionRejected, StatusCode: 409})
 
 	records := capture.snapshot()
@@ -179,8 +184,11 @@ func TestDiagnosticsCompletionUsesLatestRetryAction(t *testing.T) {
 		t.Fatalf("records = %d, want 3: %#v", len(records), records)
 	}
 	completion := records[2]
-	if completion.Fields["protected_action"] != "block_compaction" || completion.Fields["session_ref"] != "second-ref" {
+	if completion.Fields["protected_action"] != "block_route_state" || completion.Fields["session_ref"] != "second-ref" {
 		t.Fatalf("completion did not use latest retry action: %#v", completion.Fields)
+	}
+	if completion.Fields["reasoning_blocked"] != 1 || completion.Fields["previous_response_id_blocked"] != true {
+		t.Fatalf("completion lost block impact fields: %#v", completion.Fields)
 	}
 }
 

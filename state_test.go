@@ -169,10 +169,11 @@ func TestRouteStateTaintClearsOnlyAfterCleanSuccessfulTurn(t *testing.T) {
 
 func TestRouteStateCompactionPolicies(t *testing.T) {
 	blockCfg := testConfig()
+	blockCfg.CompactionPolicy = compactionPolicyBlock
 	blockStore := newRouteStateStore(blockCfg)
 	seedCommittedRoute(blockStore, "session-a", routeFingerprint{Digest: "route-a"})
 	blocked := blockStore.prepare("block", "session-a", routeFingerprint{Digest: "route-b"}, true, stateSignals{HasCompaction: true})
-	if !blocked.Reject || blocked.Strip {
+	if !blocked.Reject || !blocked.Strip {
 		t.Fatalf("block decision = %#v", blocked)
 	}
 	if len(blockStore.pending) != 0 {
@@ -190,42 +191,48 @@ func TestRouteStateCompactionPolicies(t *testing.T) {
 }
 
 func TestRouteStateRetiresRejectedForeignCompaction(t *testing.T) {
-	store := newRouteStateStore(testConfig())
+	cfg := testConfig()
+	cfg.CompactionPolicy = compactionPolicyBlock
+	store := newRouteStateStore(cfg)
 	routeA := routeFingerprint{Digest: "route-a"}
 	routeB := routeFingerprint{Digest: "route-b"}
 	seedCommittedRoute(store, "session-a", routeA)
 	foreign := stateSignals{HasCompaction: true, ItemFingerprints: []string{"compaction-from-a"}}
 	rejected := store.prepare("reject", "session-a", routeB, true, foreign)
-	if !rejected.Reject || rejected.Strip {
+	if !rejected.Reject || !rejected.Strip {
 		t.Fatalf("rejected compaction decision = %#v", rejected)
 	}
 
 	store.prepare("clean-b", "session-a", routeB, true, stateSignals{})
 	store.complete(pluginapi.RequestCompletion{RequestID: "clean-b", Outcome: pluginapi.RequestCompletionSucceeded})
 	replay := store.prepare("replay", "session-a", routeB, true, foreign)
-	if replay.Relation != routeRelationSame || replay.Strip || replay.Reject || len(replay.BlockedItemFingerprints) != 1 {
+	if replay.Relation != routeRelationSame || !replay.Reject || len(replay.BlockedItemFingerprints) != 1 {
 		t.Fatalf("replayed compaction decision = %#v", replay)
 	}
 }
 
 func TestRouteStateRetiresRejectedCompactionWithoutPriorRoute(t *testing.T) {
-	store := newRouteStateStore(testConfig())
+	cfg := testConfig()
+	cfg.CompactionPolicy = compactionPolicyBlock
+	store := newRouteStateStore(cfg)
 	route := routeFingerprint{Digest: "route-b"}
 	foreign := stateSignals{HasCompaction: true, ItemFingerprints: []string{"unknown-compaction"}}
 	rejected := store.prepare("reject", "session-a", route, true, foreign)
-	if !rejected.Reject || rejected.Relation != routeRelationUnknown {
+	if !rejected.Reject || !rejected.Strip || rejected.Relation != routeRelationUnknown {
 		t.Fatalf("rejected compaction decision = %#v", rejected)
 	}
 	store.prepare("clean", "session-a", route, true, stateSignals{})
 	store.complete(pluginapi.RequestCompletion{RequestID: "clean", Outcome: pluginapi.RequestCompletionSucceeded})
 	replay := store.prepare("replay", "session-a", route, true, foreign)
-	if replay.Relation != routeRelationSame || len(replay.BlockedItemFingerprints) != 1 {
+	if replay.Relation != routeRelationSame || !replay.Reject || len(replay.BlockedItemFingerprints) != 1 {
 		t.Fatalf("replayed compaction decision = %#v", replay)
 	}
 }
 
 func TestRouteStateRejectedCompactionDoesNotPoisonOriginalRoute(t *testing.T) {
-	store := newRouteStateStore(testConfig())
+	cfg := testConfig()
+	cfg.CompactionPolicy = compactionPolicyBlock
+	store := newRouteStateStore(cfg)
 	routeA := routeFingerprint{Digest: "route-a"}
 	routeB := routeFingerprint{Digest: "route-b"}
 	seedCommittedRoute(store, "session-a", routeA)
@@ -236,7 +243,7 @@ func TestRouteStateRejectedCompactionDoesNotPoisonOriginalRoute(t *testing.T) {
 	}
 
 	rejected := store.prepare("reject-b", "session-a", routeB, true, foreign)
-	if !rejected.Reject || rejected.Strip {
+	if !rejected.Reject || !rejected.Strip {
 		t.Fatalf("rejected compaction decision = %#v", rejected)
 	}
 
@@ -253,17 +260,19 @@ func TestRouteStateRejectedCompactionDoesNotPoisonOriginalRoute(t *testing.T) {
 	store.complete(pluginapi.RequestCompletion{RequestID: "clean-b", Outcome: pluginapi.RequestCompletionSucceeded})
 
 	replayB := store.prepare("replay-b", "session-a", routeB, true, foreign)
-	if replayB.Relation != routeRelationSame || replayB.Strip || replayB.Reject || len(replayB.BlockedItemFingerprints) != 1 {
+	if replayB.Relation != routeRelationSame || !replayB.Reject || len(replayB.BlockedItemFingerprints) != 1 {
 		t.Fatalf("rejected candidate was not protected on route B = %#v", replayB)
 	}
 }
 
 func TestRouteStateUnknownRejectedCompactionDoesNotMutateSession(t *testing.T) {
-	store := newRouteStateStore(testConfig())
+	cfg := testConfig()
+	cfg.CompactionPolicy = compactionPolicyBlock
+	store := newRouteStateStore(cfg)
 	foreign := stateSignals{HasCompaction: true, ItemFingerprints: []string{"unknown-compaction"}}
 
 	rejected := store.prepare("reject", "session-a", routeFingerprint{}, false, foreign)
-	if !rejected.Reject || rejected.Strip {
+	if !rejected.Reject || !rejected.Strip {
 		t.Fatalf("unknown rejected compaction decision = %#v", rejected)
 	}
 	if _, exists := store.sessions["session-a"]; exists {
@@ -420,6 +429,9 @@ func testConfig() pluginConfig {
 	cfg.StateTTL = time.Hour
 	cfg.MaxSessions = 16
 	cfg.MaxPending = 16
+	// Most lifecycle tests describe strip-mode cleanup. Policy-specific tests
+	// explicitly override this value so default strictness is still covered.
+	cfg.CompactionPolicy = compactionPolicyStrip
 	return cfg
 }
 

@@ -5,7 +5,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/pluginapi"
 )
 
-var pluginVersion = "0.3.0"
+var pluginVersion = "0.5.0"
 
 const pluginSchemaVersion = pluginabi.SchemaVersion
 
@@ -38,6 +38,11 @@ func pluginMetadata() pluginapi.Metadata {
 		GitHubRepository: "https://github.com/Rat0323/cpa-plugin-codex-switch-guard",
 		ConfigFields: []pluginapi.ConfigField{
 			{
+				Name:        "route_affinity",
+				Type:        pluginapi.ConfigFieldTypeBoolean,
+				Description: "Prefer the credential already committed for a Codex conversation. The scheduler abstains when no committed route is known.",
+			},
+			{
 				Name:        "persistence_enabled",
 				Type:        pluginapi.ConfigFieldTypeBoolean,
 				Description: "Persist opaque route bindings across CPA restarts. Enabled by default; disable only if restart continuity is not required.",
@@ -51,7 +56,7 @@ func pluginMetadata() pluginapi.Metadata {
 				Name:        "compaction_policy",
 				Type:        pluginapi.ConfigFieldTypeEnum,
 				EnumValues:  []string{string(compactionPolicyBlock), string(compactionPolicyStrip)},
-				Description: "Compaction handling on route changes. block (recommended) rejects unsafe switches; strip drops compaction state and continues.",
+				Description: "Handling for unsafe route-bound state. block (recommended) rejects before removal; strip drops reasoning, compaction, and prior response state, then continues.",
 			},
 			{
 				Name:        "state_ttl",

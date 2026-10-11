@@ -158,6 +158,59 @@ func (p payloadInspection) stripRouteBoundStateWithStats() ([]byte, sanitizeStat
 	return updated, stats, nil
 }
 
+// routeBoundRemovalStats reports what a strip decision would remove without
+// changing the payload. It lets block-mode responses state the exact impact.
+func (p payloadInspection) routeBoundRemovalStatsWithDigester(digester opaqueDigester, fingerprints []string, full bool) sanitizeStats {
+	stats := sanitizeStats{}
+	if full {
+		if _, exists := p.Root["previous_response_id"]; exists {
+			stats.PreviousResponseIDRemoved = true
+		}
+		if !p.InputArray {
+			return stats
+		}
+		for _, item := range p.InputItems {
+			kind, _, ok := routeBoundInputItemWithDigester(item, digester)
+			if !ok {
+				continue
+			}
+			switch kind {
+			case "reasoning":
+				stats.ReasoningRemoved++
+			case "compaction":
+				stats.CompactionRemoved++
+			}
+		}
+		return stats
+	}
+
+	if !p.InputArray || len(fingerprints) == 0 {
+		return stats
+	}
+	blocked := make(map[string]struct{}, len(fingerprints))
+	for _, fingerprint := range fingerprints {
+		if fingerprint != "" {
+			blocked[fingerprint] = struct{}{}
+		}
+	}
+	for _, item := range p.InputItems {
+		kind, fingerprint, ok := routeBoundInputItemWithDigester(item, digester)
+		if !ok {
+			continue
+		}
+		if _, remove := blocked[fingerprint]; !remove {
+			continue
+		}
+		switch kind {
+		case "reasoning":
+			stats.ReasoningRemoved++
+		case "compaction":
+			stats.CompactionRemoved++
+		}
+	}
+	return stats
+}
+
 // stripRetiredRouteBoundItemsWithDigester removes only top-level items already
 // observed on a foreign or unknown route. previous_response_id remains intact
 // because it belongs to the currently selected route on same-route

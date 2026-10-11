@@ -26,8 +26,8 @@ Codex Switch Guard 会在请求到达所选上游之前补充这层路由感知�
 ## 如何保护请求
 
 - 在相同 CPA 凭据和模型路由上原样保留有效的加密 reasoning。
-- 在路由变化或无法确认时，移除不安全的顶层 `reasoning` 项和 `previous_response_id`。
-- 默认阻止不安全的 `compaction`，也可以显式配置为移除后继续。
+- 默认阻止不安全的顶层 `reasoning`、`compaction` 和 `previous_response_id` 进入不同或未知的上游。
+- 只有显式配置为移除后继续时，才会剔除这些不安全状态。
 - 仅在 CPA 报告请求生命周期成功后提交路由变化；失败的重试和故障转移不会推进已确认路由。
 - 默认持久化有界的不透明路由状态，使正常重启 CPA 后仍能判断原路由，并通过 CPA 现有日志系统输出隐私安全的诊断信息。
 - 忽略非 Codex 目标，不修改无关的请求内容。
@@ -36,28 +36,28 @@ Codex Switch Guard 会在请求到达所选上游之前补充这层路由感知�
 
 Codex Switch Guard 是路由安全边界，不是跨凭据上下文迁移系统。它无法解密由某个凭据生成的状态，也无法为另一个凭据重新加密。
 
-## 选择 compaction 策略
+## 选择路由状态策略
 
 | 目标 | 策略 | 结果 |
 | --- | --- | --- |
-| 不允许静默丢弃压缩上下文 | `block`（默认） | 对不安全的切换返回 HTTP 409 |
+| 不允许静默丢弃路由绑定上下文 | `block`（默认） | 对不安全的切换返回 HTTP 409 |
 | 保持自动故障转移继续运行 | `strip` | 移除旧的路由绑定上下文，然后在新路由继续 |
 
 只要已确认的凭据和模型路由没有变化，两种策略都会原样保留加密上下文。
 
-`block` 不参与普通的同路由续接。它只在“路由已经变化或无法确认，并且请求携带 compaction”时介入，把原本静默发生的压缩上下文丢失变成一次显式选择。
+`block` 不参与普通的同路由续接。它会在“路由变化或无法确认”，或“同一路由上重放已知已退役项目”且请求携带路由绑定状态时介入，把原本静默发生的上下文丢失变成一次显式选择。`compaction_policy` 为兼容保留原有配置键名，但现在同时作用于 reasoning、compaction 和 previous_response_id。
 
 ## HTTP 409 是保护动作
 
 如果 Codex 报告：
 
 ```text
-Codex compaction belongs to a different or unknown upstream credential.
+Codex route-bound state belongs to a different or unknown upstream credential.
 ```
 
-说明插件发现了无法确认属于当前所选路由的 compaction 状态。请求会在这些状态被发送到上游之前由本地拒绝。这表示保护机制已经生效，并不表示拦截器崩溃。
+说明插件发现了无法确认属于当前所选路由的路由绑定状态。请求会在任何内容被移除或发送到上游之前由本地拒绝。这表示保护机制已经生效，并不表示拦截器崩溃。
 
-要继续任务，可以重新使用原始凭据、创建干净会话，或者设置 `compaction_policy: strip`，接受旧的压缩上下文被移除。
+响应体还会包含 `details` 对象，列出策略、路由关系，以及 `strip` 决策将要移除的 reasoning 和 compaction 数量，并说明 `previous_response_id` 是否会被移除。要继续任务，可以重新使用原始凭据、开始干净轮次，或者设置 `compaction_policy: strip`，接受列出的状态被移除。
 
 ## 快速开始
 
@@ -90,9 +90,10 @@ codex-switch-guard_<version>_<goos>_<goarch>.zip
 | 非 Codex 目标 | 不干预，直接通过 |
 | 没有顶层路由绑定状态 | 原样通过 |
 | 加密状态属于相同的已确认路由 | 原样通过 |
-| 路由变化或未知 | 移除 reasoning 和 prior response ID |
-| 不安全的 compaction（`block`） | 返回 HTTP 409 |
-| 不安全的 compaction（`strip`） | 移除后继续 |
+| 路由变化或未知（`block`） | 返回 HTTP 409 |
+| 路由变化或未知（`strip`） | 移除 reasoning、compaction 和 prior response ID 后继续 |
+| 同一路由重放已退役项目（`block`） | 返回 HTTP 409 |
+| 同一路由重放已退役项目（`strip`） | 仅移除该项目后继续 |
 | 请求生命周期失败 | 不提交路由 |
 | 请求生命周期成功 | 提交路由 |
 
@@ -106,6 +107,7 @@ plugins:
   configs:
     codex-switch-guard:
       enabled: true
+      route_affinity: true
       persistence_enabled: true
       # state_file: C:/path/to/codex-switch-guard-state.json
       compaction_policy: block
@@ -118,26 +120,31 @@ plugins:
 | 字段 | 默认值 | 可选值 | 用途 |
 | --- | --- | --- | --- |
 | `enabled` | `true` | `true`、`false` | 插件实例开关 |
+| `route_affinity` | `true` | `true`、`false` | 调度时优先选回当前会话已提交的 Codex 凭据 |
 | `persistence_enabled` | `true` | `true`、`false` | CPA 重启后保留不透明路由绑定 |
 | `state_file` | `<UserConfigDir>/codex-switch-guard/route-state-v1.json` | 文件路径 | 可选的持久化状态文件位置 |
-| `compaction_policy` | `block` | `block`、`strip` | compaction 处理策略 |
+| `compaction_policy` | `block` | `block`、`strip` | 不安全路由绑定状态处理策略 |
 | `state_ttl` | `4h` | `1m` 到 `24h` | 路由绑定保留时间 |
 | `max_sessions` | `4096` | `1` 到 `65536` | 会话状态数量上限 |
 | `max_pending` | `8192` | `1` 到 `65536` | 进行中请求数量上限 |
 | `diagnostics` | `actions` | `off`、`actions`、`debug` | 插件诊断级别 |
 
-`block` 是推荐的 compaction 策略，可以避免静默丢弃压缩上下文。只有在相比返回冲突，更希望请求丢弃旧上下文并继续时，才使用 `strip`。
+`block` 是推荐策略，可以避免静默丢弃任何路由绑定上下文。只有在相比返回冲突，更希望请求丢弃旧上下文并继续时，才使用 `strip`。
 
-两种策略仅在出现不安全的顶层 `compaction` 时存在差异。对普通加密 reasoning 和同路由续接的处理完全相同：
+`route_affinity` 只在插件已经为会话确认过一条 Codex 路由时介入。此时调度阶段会优先选回同一个凭据；没有已知路由、路由已失效或凭据不在当前候选列表中时，插件会让 CPA 继续使用原有调度策略。该功能不改变全局调度算法。
+
+在 CPA `7.3.20` 或更新版本中，插件可以查看所有优先级层级内的可用凭据，因此能保留原本位于较低优先级的会话路由。旧版主机只提供其当前候选。CPA 会先过滤不可用或冷却中的凭据；原凭据不可用时，插件会交回 CPA 正常故障转移。
+
+两种策略对已确认的同路由续接完全相同；一旦发现不安全的路由绑定状态或已退役项目，二者才会分叉：
 
 | 情况 | `block` | `strip` |
 | --- | --- | --- |
 | 相同的已确认凭据和模型路由 | 保留路由绑定状态并继续 | 保留路由绑定状态并继续 |
-| 路由变化或未知，存在 reasoning 但没有 compaction | 移除不安全 reasoning 和 prior response ID，然后继续 | 移除不安全 reasoning 和 prior response ID，然后继续 |
-| 路由变化或未知，并存在 compaction | 不向上游发送请求，返回 HTTP 409 | 移除 reasoning、compaction 和 prior response ID，然后继续 |
-| 主要取舍 | 最大化上下文连续性安全；当前轮次可能需要回到原路由重试或干净启动 | 更高可用性；路由切换时可能丢失压缩上下文 |
+| 同一路由重放已退役项目 | 返回 HTTP 409，不移除任何内容 | 仅移除已退役项目，然后继续 |
+| 路由变化或未知 | 不向上游发送请求，返回 HTTP 409 | 移除 reasoning、compaction 和 prior response ID，然后继续 |
+| 主要取舍 | 最大化上下文连续性安全；当前轮次可能需要回到原路由重试或干净启动 | 更高可用性；路由切换时可能丢失加密上下文 |
 
-当保留压缩会话上下文比完成当前轮次更重要时，适合使用 `block`。compaction 可能是较早对话状态唯一的压缩表示，静默移除后，用户仅从当前提示往往无法判断丢了什么；`block` 的价值就是把这次有损降级变成显式决定。当自动凭据故障转移必须继续，即使新路由需要丢弃旧压缩状态时，适合使用 `strip`。
+当保留加密会话上下文比完成当前轮次更重要时，适合使用 `block`。加密 reasoning 或 compaction 可能是较早对话状态唯一的可复用表示，静默移除后，用户仅从当前提示往往无法判断丢了什么；`block` 的价值就是把这次有损降级变成显式决定。当自动凭据故障转移必须继续，即使新路由需要丢弃旧加密状态时，适合使用 `strip`。
 
 CPA `7.2.130` 暴露的插件配置字段没有独立的默认值属性。因此，在保存覆盖值之前，管理页面可能将这些字段显示为空。字段为空或省略都是有效配置，插件会应用上表中的运行时默认值。
 

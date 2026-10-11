@@ -51,8 +51,12 @@ func (p *switchGuardPlugin) InterceptRequestAfterAuth(_ context.Context, req plu
 	}
 	decisionFields := diagnosticDecisionFields(sessionKey, route, routeKnown, decision, inspection.Signals)
 	if decision.Reject {
-		p.diagnostics.action("warn", "block_compaction", req, decisionFields)
-		return compactionTermination(), nil
+		stats := inspection.routeBoundRemovalStatsWithDigester(p.digester, decision.BlockedItemFingerprints, decision.Strip)
+		decisionFields["reasoning_blocked"] = stats.ReasoningRemoved
+		decisionFields["compaction_blocked"] = stats.CompactionRemoved
+		decisionFields["previous_response_id_blocked"] = stats.PreviousResponseIDRemoved
+		p.diagnostics.action("warn", "block_route_state", req, decisionFields)
+		return routeStateTermination(stats, decision.Relation), nil
 	}
 	if !decision.Strip && len(decision.BlockedItemFingerprints) == 0 {
 		action := "pass_clean"
@@ -118,8 +122,31 @@ func isCodexTarget(req pluginapi.RequestInterceptRequest) bool {
 
 const resetRequiredErrorType = "codex_switch_guard_reset_required"
 
-func compactionTermination() pluginapi.RequestInterceptResponse {
-	return stateResetTermination(http.StatusConflict, "Codex compaction belongs to a different or unknown upstream credential. Retry on the original credential, or set compaction_policy: strip to continue without compaction.")
+func routeStateTermination(stats sanitizeStats, relation routeRelation) pluginapi.RequestInterceptResponse {
+	body, errMarshal := json.Marshal(map[string]any{
+		"error": map[string]any{
+			"type": resetRequiredErrorType,
+			"message": "Codex route-bound state belongs to a different or unknown upstream credential. " +
+				"The request was rejected before anything was removed or sent upstream. " +
+				"Retry on the original credential, start a clean turn, or set compaction_policy: strip to remove this state and continue.",
+			"details": map[string]any{
+				"policy":                                string(compactionPolicyBlock),
+				"route_relation":                        relationName(relation),
+				"reasoning_items_would_be_removed":      stats.ReasoningRemoved,
+				"compaction_items_would_be_removed":     stats.CompactionRemoved,
+				"previous_response_id_would_be_removed": stats.PreviousResponseIDRemoved,
+			},
+		},
+	})
+	if errMarshal != nil {
+		body = []byte(`{"error":{"type":"` + resetRequiredErrorType + `","message":"Codex route-bound state must be reset."}}`)
+	}
+	return pluginapi.RequestInterceptResponse{
+		Terminate:       true,
+		StatusCode:      http.StatusConflict,
+		ResponseHeaders: http.Header{"Content-Type": []string{"application/json"}},
+		ResponseBody:    body,
+	}
 }
 
 func stateResetTermination(status int, message string) pluginapi.RequestInterceptResponse {

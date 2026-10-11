@@ -168,6 +168,9 @@ func (s *routeStateStore) prepare(requestID, sessionKey string, route routeFinge
 	canTrack := sessionKey != "" && routeKnown
 	if !canTrack {
 		decision = failClosedDecision(signals, s.cfg.CompactionPolicy)
+		if decision.Reject {
+			return decision
+		}
 		if decision.Strip && sessionKey != "" && requestID != "" {
 			session := s.sessions[sessionKey]
 			session.UpdatedAt = now
@@ -214,12 +217,16 @@ func (s *routeStateStore) prepare(requestID, sessionKey string, route routeFinge
 	}
 
 	unsafeState := signals.hasRouteBoundState() && (session.Tainted || decision.Relation != routeRelationSame)
-	if unsafeState && signals.HasCompaction && s.cfg.CompactionPolicy == compactionPolicyBlock {
+	if unsafeState {
+		decision.Strip = true
+	}
+	removalRequired := decision.Strip || len(decision.BlockedItemFingerprints) > 0
+	if removalRequired && s.cfg.CompactionPolicy == compactionPolicyBlock {
 		decision.Reject = true
 		// A locally rejected candidate never commits a route transition. Keep a
 		// route-scoped barrier for a known target so a replay on that target is
 		// still removed, without poisoning the previously committed route.
-		if sessionKey != "" && routeKnown {
+		if decision.Strip && sessionKey != "" && routeKnown {
 			session = s.retireItemsLocked(session, signals.ItemFingerprints, route, true, now)
 			s.sessions[sessionKey] = session
 			persistentDirty = true
@@ -227,10 +234,6 @@ func (s *routeStateStore) prepare(requestID, sessionKey string, route routeFinge
 		}
 		return decision
 	}
-	if unsafeState {
-		decision.Strip = true
-	}
-
 	if requestID == "" {
 		return decision
 	}
@@ -266,11 +269,10 @@ func failClosedDecision(signals stateSignals, policy compactionPolicy) routeDeci
 	if !signals.hasRouteBoundState() {
 		return decision
 	}
-	if signals.HasCompaction && policy == compactionPolicyBlock {
-		decision.Reject = true
-		return decision
-	}
 	decision.Strip = true
+	if policy == compactionPolicyBlock {
+		decision.Reject = true
+	}
 	return decision
 }
 
@@ -437,6 +439,19 @@ func (s *routeStateStore) reset() {
 	s.sessions = make(map[string]sessionRouteState)
 	s.pending = make(map[string]pendingRoute)
 	s.persistSoonLocked()
+}
+
+func (s *routeStateStore) committedRoute(sessionKey string) (routeFingerprint, bool) {
+	if s == nil || strings.TrimSpace(sessionKey) == "" {
+		return routeFingerprint{}, false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	state, exists := s.sessions[sessionKey]
+	if !exists || !state.HasRoute || state.Tainted {
+		return routeFingerprint{}, false
+	}
+	return state.Route, true
 }
 
 func (s *routeStateStore) discardPending(requestID string) {

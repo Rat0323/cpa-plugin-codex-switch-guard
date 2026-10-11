@@ -32,10 +32,9 @@ the selected upstream.
 ## How it protects requests
 
 - Preserves valid encrypted reasoning on the same CPA credential/model route.
-- Strips unsafe top-level `reasoning` items and `previous_response_id` before a
-  request reaches a different or unknown route.
-- Blocks unsafe `compaction` by default, or strips it when explicitly configured
-  for availability.
+- Blocks unsafe top-level `reasoning`, `compaction`, and `previous_response_id`
+  state by default before a request reaches a different or unknown route.
+- Strips that unsafe state only when explicitly configured for availability.
 - Commits route changes only after CPA reports a successful request lifecycle
   outcome; failed retries and failovers do not advance the route.
 - Persists bounded opaque route bindings across normal CPA restarts and emits
@@ -49,35 +48,41 @@ Codex Switch Guard is a route-safety boundary, not a cross-credential context
 migration system. It cannot decrypt state created by one credential or
 re-encrypt it for another.
 
-## Choose a compaction policy
+## Choose a route-state policy
 
 | Goal | Policy | Result |
 | --- | --- | --- |
-| Never discard compressed context silently | `block` (default) | Reject an unsafe switch with HTTP 409 |
+| Never discard route-bound context silently | `block` (default) | Reject an unsafe switch with HTTP 409 |
 | Keep automatic failover running | `strip` | Remove old route-bound context and continue on the new route |
 
 Both policies preserve encrypted context unchanged when the committed
 credential and model route remains the same.
 
 `block` is not involved in an ordinary same-route continuation. It activates
-only when the route is changed or unknown and the request carries compaction,
-turning an otherwise silent loss of compressed context into an explicit choice.
+when the route is changed, unknown, or carrying a known retired item, and the
+request contains route-bound state, turning an otherwise silent context loss
+into an explicit choice. `compaction_policy` keeps its historical configuration
+key for compatibility, but the policy now applies to encrypted reasoning,
+compaction, and prior response state together.
 
 ## HTTP 409 is a protection action
 
 If Codex reports:
 
 ```text
-Codex compaction belongs to a different or unknown upstream credential.
+Codex route-bound state belongs to a different or unknown upstream credential.
 ```
 
-the plugin found compaction state that it could not verify against the selected
-route. The request was rejected locally before that state was sent upstream.
-This means the protection worked; it does not mean the interceptor crashed.
+the plugin found route-bound state that it could not verify against the selected
+route. The request was rejected locally before anything was removed or sent
+upstream. This means the protection worked; it does not mean the interceptor
+crashed.
 
-To continue, retry on the original credential, start a clean conversation, or
-set `compaction_policy: strip` and accept that the old compressed context will
-be removed.
+The response body also contains a `details` object with the policy, route
+relation, and exact number of reasoning and compaction items that a `strip`
+decision would remove, plus whether `previous_response_id` would be removed.
+To continue, retry on the original credential, start a clean turn, or set
+`compaction_policy: strip` and accept that the listed state will be removed.
 
 ## Quick start
 
@@ -116,9 +121,10 @@ packaged-library SHA-256.
 | Non-Codex target | Pass through without intervention |
 | No top-level route-bound state | Pass through unchanged |
 | Encrypted state on the same committed route | Pass through unchanged |
-| Changed or unknown route | Strip reasoning and prior response ID |
-| Unsafe compaction (`block`) | Return HTTP 409 |
-| Unsafe compaction (`strip`) | Strip and continue |
+| Changed or unknown route (`block`) | Return HTTP 409 |
+| Changed or unknown route (`strip`) | Strip reasoning, compaction, and prior response ID, then continue |
+| Retired item replayed on the same route (`block`) | Return HTTP 409 |
+| Retired item replayed on the same route (`strip`) | Strip only that item and continue |
 | Failed lifecycle attempt | Do not commit the route |
 | Successful lifecycle attempt | Commit the route |
 
@@ -133,6 +139,7 @@ plugins:
   configs:
     codex-switch-guard:
       enabled: true
+      route_affinity: true
       persistence_enabled: true
       # state_file: C:/path/to/codex-switch-guard-state.json
       compaction_policy: block
@@ -145,34 +152,47 @@ plugins:
 | Field | Default | Accepted values | Purpose |
 | --- | --- | --- | --- |
 | `enabled` | `true` | `true`, `false` | Plugin instance toggle |
+| `route_affinity` | `true` | `true`, `false` | Prefer the credential already committed for the Codex conversation during scheduling |
 | `persistence_enabled` | `true` | `true`, `false` | Keep opaque route bindings across CPA restarts |
 | `state_file` | `<UserConfigDir>/codex-switch-guard/route-state-v1.json` | File path | Optional persistent-state location |
-| `compaction_policy` | `block` | `block`, `strip` | Compaction handling |
+| `compaction_policy` | `block` | `block`, `strip` | Handling for unsafe route-bound state |
 | `state_ttl` | `4h` | `1m` through `24h` | Route binding lifetime |
 | `max_sessions` | `4096` | `1` through `65536` | Session entry cap |
 | `max_pending` | `8192` | `1` through `65536` | Pending attempt cap |
 | `diagnostics` | `actions` | `off`, `actions`, `debug` | Plugin logging level |
 
-`block` is the recommended compaction policy. It avoids silently discarding
-compaction context. Use `strip` only when continuing without that context is
-preferable to returning a conflict.
+`block` is the recommended policy. It avoids silently discarding any route-bound
+context. Use `strip` only when continuing without that context is preferable to
+returning a conflict.
 
-The policies differ only when unsafe top-level `compaction` is present. They
-handle ordinary encrypted reasoning and same-route continuations identically:
+`route_affinity` only intervenes when the plugin has already committed a Codex
+route for the conversation. In that case the scheduler prefers the same
+credential; with no known route, an invalid route, or a credential absent from
+the current candidate list, the plugin leaves CPA's existing scheduling strategy
+unchanged. This feature does not replace the global scheduler.
+On CPA `7.3.20` or newer, the plugin can see available credentials across
+priority tiers and retain an existing lower-priority route. Older hosts limit
+the scheduler to their offered candidates. CPA filters unavailable or
+cooling-down credentials before calling the plugin, so affinity yields to
+normal failover when the original credential is unavailable.
+
+The policies handle confirmed same-route continuations identically. They diverge
+whenever unsafe route-bound state or a retired item is present:
 
 | Situation | `block` | `strip` |
 | --- | --- | --- |
 | Same committed credential/model route | Preserve route-bound state and continue | Preserve route-bound state and continue |
-| Changed/unknown route with reasoning but no compaction | Strip unsafe reasoning and prior response ID, then continue | Strip unsafe reasoning and prior response ID, then continue |
-| Changed/unknown route with compaction | Return HTTP 409 without sending the request upstream | Strip reasoning, compaction, and prior response ID, then continue |
-| Main tradeoff | Maximum continuity safety; the turn may require retrying on the original route or starting clean | Higher availability; compressed context may be discarded on a route switch |
+| Retired item replayed on the same route | Return HTTP 409 without removing anything | Strip only that item, then continue |
+| Changed/unknown route | Return HTTP 409 without sending the request upstream | Strip reasoning, compaction, and prior response ID, then continue |
+| Main tradeoff | Maximum continuity safety; the turn may require retrying on the original route or starting clean | Higher availability; encrypted context may be discarded on a route switch |
 
-`block` is appropriate when preserving compressed conversation context matters
-more than completing the current turn. A compaction item may be the only compact
-representation of earlier conversation state, so silently removing it can make
+`block` is appropriate when preserving encrypted conversation context matters
+more than completing the current turn. An encrypted reasoning or compaction item
+may be the only reusable representation of earlier conversation state, so
+silently removing it can make
 the continuation incomplete in ways the user cannot see from the current prompt.
 `strip` is appropriate when automatic credential failover should keep working
-even if the new route must continue without the old route's compressed state.
+even if the new route must continue without the old route's encrypted state.
 
 CPA `7.2.130` exposes plugin-owned configuration fields without a separate
 default-value property. Management screens may therefore display these fields as

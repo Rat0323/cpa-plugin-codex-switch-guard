@@ -224,6 +224,13 @@ func handleABIMethod(ctx context.Context, method string, request []byte) ([]byte
 	defer done()
 
 	switch method {
+	case pluginabi.MethodSchedulerPick:
+		var req pluginapi.SchedulerPickRequest
+		if errDecode := json.Unmarshal(request, &req); errDecode != nil {
+			return nil, errDecode
+		}
+		resp, errPick := p.Pick(ctx, req)
+		return abiOKEnvelopeWithError(resp, errPick)
 	case pluginabi.MethodRequestInterceptBefore:
 		var req pluginapi.RequestInterceptRequest
 		if errDecode := json.Unmarshal(request, &req); errDecode != nil {

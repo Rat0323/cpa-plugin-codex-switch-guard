@@ -4,7 +4,34 @@ All notable user-facing changes to Codex Switch Guard are documented here.
 The project follows semantic versioning, and release automation publishes the
 matching version section verbatim.
 
-## [Unreleased]
+## [0.5.0] - 2026-10-12
+
+### Added
+
+- Added `route_affinity` (default `true`). When a Codex conversation already has
+  a committed route, the scheduler prefers that credential; otherwise the plugin
+  leaves CPA's existing scheduling strategy unchanged.
+- On CPA `7.3.20` or newer, affinity can preserve an available committed route
+  across priority tiers while yielding to host failover when it is unavailable.
+
+### Fixed
+
+- Aligned the SDK dependency with schema 5 and 6 registration tests and
+  prevented mixed-provider scheduling from treating non-Codex candidates as
+  Codex routes.
+
+### Changed
+
+- **Breaking:** `compaction_policy: block` now rejects before any unsafe
+  route-bound state is removed. This includes encrypted reasoning,
+  `previous_response_id`, unsafe compaction, and retired items replayed on a
+  confirmed route. Only `compaction_policy: strip` continues with cleanup.
+- Added structured `details` to the HTTP 409 response. It reports the policy,
+  route relation, and the exact reasoning/compaction counts that a `strip`
+  decision would remove, plus whether `previous_response_id` would be removed.
+- Renamed the protection diagnostic action from `block_compaction` to
+  `block_route_state` and added `reasoning_blocked`, `compaction_blocked`, and
+  `previous_response_id_blocked` fields.
 
 ## [0.3.0] - 2026-09-15
 
@@ -167,7 +194,8 @@ Full diff: [v0.2.0...v0.2.1](https://github.com/Rat0323/cpa-plugin-codex-switch-
 Initial release. This version is deprecated because retry and session edge cases
 were corrected in `v0.1.1`.
 
-[Unreleased]: https://github.com/Rat0323/cpa-plugin-codex-switch-guard/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/Rat0323/cpa-plugin-codex-switch-guard/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/Rat0323/cpa-plugin-codex-switch-guard/compare/v0.4.0...v0.5.0
 [0.3.0]: https://github.com/Rat0323/cpa-plugin-codex-switch-guard/compare/v0.2.3...v0.3.0
 [0.2.3]: https://github.com/Rat0323/cpa-plugin-codex-switch-guard/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/Rat0323/cpa-plugin-codex-switch-guard/compare/v0.2.1...v0.2.2

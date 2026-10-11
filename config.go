@@ -36,6 +36,7 @@ const (
 
 type pluginConfig struct {
 	Enabled             bool   `yaml:"enabled"`
+	RouteAffinity       bool   `yaml:"route_affinity"`
 	PersistenceRaw      *bool  `yaml:"persistence_enabled"`
 	StateFileRaw        string `yaml:"state_file"`
 	StateTTLRaw         string `yaml:"state_ttl"`
@@ -54,6 +55,7 @@ type pluginConfig struct {
 func defaultPluginConfig() pluginConfig {
 	return pluginConfig{
 		Enabled:            true,
+		RouteAffinity:      true,
 		PersistenceEnabled: true,
 		StateTTL:           defaultStateTTL,
 		MaxSessions:        defaultMaxSessions,

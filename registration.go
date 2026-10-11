@@ -9,8 +9,10 @@ type abiRegistration struct {
 }
 
 type abiCapabilities struct {
-	RequestInterceptor     bool `json:"request_interceptor"`
-	RequestLifecyclePlugin bool `json:"request_lifecycle_plugin"`
+	Scheduler                 bool `json:"scheduler"`
+	SchedulerAcrossPriorities bool `json:"scheduler_across_priorities,omitempty"`
+	RequestInterceptor        bool `json:"request_interceptor"`
+	RequestLifecyclePlugin    bool `json:"request_lifecycle_plugin"`
 }
 
 func pluginRegistration(schemaVersion uint32) abiRegistration {
@@ -18,8 +20,10 @@ func pluginRegistration(schemaVersion uint32) abiRegistration {
 		SchemaVersion: schemaVersion,
 		Metadata:      pluginMetadata(),
 		Capabilities: abiCapabilities{
-			RequestInterceptor:     true,
-			RequestLifecyclePlugin: true,
+			Scheduler:                 true,
+			SchedulerAcrossPriorities: true,
+			RequestInterceptor:        true,
+			RequestLifecyclePlugin:    true,
 		},
 	}
 }
