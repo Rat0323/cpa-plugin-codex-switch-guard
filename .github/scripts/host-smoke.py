@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import pathlib
+import platform
 import shutil
 import socket
 import subprocess
@@ -17,6 +18,7 @@ import urllib.request
 
 
 MANAGEMENT_SECRET = "codex-switch-safe-host-smoke"
+HOST_SMOKE_VERSION = "0.0.0-host-smoke"
 
 
 def free_port() -> int:
@@ -29,7 +31,13 @@ def yaml_string(value: pathlib.Path | str) -> str:
     return json.dumps(str(value).replace("\\", "/"))
 
 
-def write_config(path: pathlib.Path, auth_dir: pathlib.Path, plugin_dir: pathlib.Path, port: int) -> None:
+def write_config(
+    path: pathlib.Path,
+    auth_dir: pathlib.Path,
+    plugin_dir: pathlib.Path,
+    state_file: pathlib.Path,
+    port: int,
+) -> None:
     path.write_text(
         "\n".join(
             [
@@ -51,7 +59,16 @@ def write_config(path: pathlib.Path, auth_dir: pathlib.Path, plugin_dir: pathlib
                 "  configs:",
                 "    codex-switch-safe:",
                 "      enabled: true",
+                "      persistence_enabled: true",
+                f"      state_file: {yaml_string(state_file)}",
                 "      diagnostics: actions",
+                "      store:",
+                "        id: codex-switch-safe",
+                "        name: Codex Switch Safe",
+                f"        version: {HOST_SMOKE_VERSION}",
+                f"        release-tag: v{HOST_SMOKE_VERSION}",
+                "        install:",
+                "          type: github-release",
                 "",
             ]
         ),
@@ -100,14 +117,19 @@ def smoke(host: pathlib.Path, plugin: pathlib.Path, timeout: float) -> dict:
     with tempfile.TemporaryDirectory(prefix="codex-switch-safe-host-smoke-") as raw_dir:
         work_dir = pathlib.Path(raw_dir)
         auth_dir = work_dir / "auth"
-        plugin_dir = work_dir / "plugins"
+        plugins_root = work_dir / "plugins"
+        install_dir = plugins_root
+        if platform.system() == "Windows":
+            install_dir = plugins_root / "windows" / "amd64"
         auth_dir.mkdir()
-        plugin_dir.mkdir()
-        installed_plugin = plugin_dir / f"codex-switch-safe{plugin.suffix}"
+        install_dir.mkdir(parents=True)
+        installed_plugin = install_dir / f"codex-switch-safe-v{HOST_SMOKE_VERSION}{plugin.suffix}"
         shutil.copy2(plugin, installed_plugin)
         config = work_dir / "config.yaml"
+        state_file = work_dir / "route-state-v1.json"
+        state_key = work_dir / "route-state-v1.json.key"
         port = free_port()
-        write_config(config, auth_dir, plugin_dir, port)
+        write_config(config, auth_dir, plugins_root, state_file, port)
 
         process = subprocess.Popen(
             [str(host), "-config", str(config)],
@@ -138,7 +160,15 @@ def smoke(host: pathlib.Path, plugin: pathlib.Path, timeout: float) -> dict:
                     continue
                 if status.get("plugin", {}).get("id") != "codex-switch-safe":
                     raise RuntimeError(f"unexpected plugin status: {status}")
+                persistence = status.get("persistence", {})
+                if not persistence.get("enabled") or not persistence.get("healthy"):
+                    raise RuntimeError(f"unexpected persistence status: {status}")
+                if not state_key.is_file():
+                    raise RuntimeError("persistence key file was not created")
                 verify_private_status_route(port)
+                time.sleep(2)
+                if not state_file.is_file():
+                    raise RuntimeError("persistence state file was not written")
                 return status
             raise RuntimeError(
                 f"CPA management route was not ready: {last_error}\n" + "\n".join(output[-80:])

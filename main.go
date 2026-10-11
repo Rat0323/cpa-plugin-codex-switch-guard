@@ -5,7 +5,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/pluginapi"
 )
 
-var pluginVersion = "0.3.1"
+var pluginVersion = "0.4.0"
 
 const pluginSchemaVersion = pluginabi.SchemaVersion
 
@@ -16,7 +16,7 @@ func buildPlugin(configYAML []byte) (*switchSafePlugin, error) {
 	}
 	return &switchSafePlugin{
 		cfg:         cfg,
-		state:       newRouteStateStore(cfg),
+		state:       newConfiguredRouteStateStore(cfg),
 		diagnostics: newDiagnosticReporter(cfg.Diagnostics, cfg.MaxPending, hostDiagnosticSink),
 		metrics:     newPluginMetrics(),
 	}, nil
@@ -36,9 +36,19 @@ func pluginMetadata() pluginapi.Metadata {
 				Description: "Compaction handling on route changes. block (recommended) rejects unsafe switches; strip drops compaction state and continues.",
 			},
 			{
+				Name:        "persistence_enabled",
+				Type:        pluginapi.ConfigFieldTypeBoolean,
+				Description: "Keep opaque committed route bindings across CPA restarts. Default: false.",
+			},
+			{
+				Name:        "state_file",
+				Type:        pluginapi.ConfigFieldTypeString,
+				Description: "Optional absolute path for persisted route state. Default: the user config directory.",
+			},
+			{
 				Name:        "state_ttl",
 				Type:        pluginapi.ConfigFieldTypeString,
-				Description: "How long a conversation route binding stays in memory. Accepts 1m through 24h; default: 4h.",
+				Description: "How long a conversation route binding stays trusted in memory or optional persistent state. Accepts 1m through 24h; default: 4h.",
 			},
 			{
 				Name:        "max_sessions",

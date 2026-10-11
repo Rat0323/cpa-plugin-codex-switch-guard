@@ -148,9 +148,13 @@ func CodexSwitchSafePluginFree(ptr unsafe.Pointer, _ C.size_t) {
 func CodexSwitchSafePluginShutdown() {
 	switchSafeABIState.Lock()
 	switchSafeABIState.shuttingDown = true
+	plugin := switchSafeABIState.plugin
 	switchSafeABIState.plugin = nil
 	switchSafeABIState.Unlock()
 	switchSafeABIState.inFlight.Wait()
+	if plugin != nil {
+		plugin.state.stopPersistence()
+	}
 	clearHostAPI()
 }
 
@@ -300,8 +304,12 @@ func handlePluginLifecycle(request []byte) ([]byte, error) {
 		switchSafeABIState.Unlock()
 		return nil, fmt.Errorf("%s is shutting down", pluginID)
 	}
+	previous := switchSafeABIState.plugin
 	switchSafeABIState.plugin = p
 	switchSafeABIState.Unlock()
+	if previous != nil && previous != p {
+		previous.state.stopPersistence()
+	}
 	return abiOKEnvelope(pluginRegistration(schemaVersion))
 }
 

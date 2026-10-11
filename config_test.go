@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -49,5 +51,37 @@ func TestParsePluginConfigRejectsUnknownFieldAlongsideStore(t *testing.T) {
 	}
 	if !strings.Contains(errParse.Error(), "compaction_polciy") {
 		t.Fatalf("error = %q, want unknown field name", errParse)
+	}
+}
+
+func TestParsePluginConfigPersistenceDefaultsOff(t *testing.T) {
+	cfg := defaultPluginConfig()
+	if cfg.PersistenceEnabled {
+		t.Fatal("default persistence_enabled = true, want false")
+	}
+	if cfg.StateFile != "" {
+		t.Fatalf("default state_file = %q, want empty", cfg.StateFile)
+	}
+}
+
+func TestParsePluginConfigAcceptsAbsoluteStateFile(t *testing.T) {
+	stateFile := filepath.Join(t.TempDir(), "route-state-v1.json")
+	raw := []byte(fmt.Sprintf("enabled: true\npersistence_enabled: true\nstate_file: %q\n", filepath.ToSlash(stateFile)))
+	cfg, errParse := parsePluginConfig(raw)
+	if errParse != nil {
+		t.Fatalf("parsePluginConfig() error = %v", errParse)
+	}
+	if !cfg.PersistenceEnabled || cfg.StateFile != stateFile {
+		t.Fatalf("config = %#v", cfg)
+	}
+}
+
+func TestParsePluginConfigRejectsRelativeStateFile(t *testing.T) {
+	_, errParse := parsePluginConfig([]byte("persistence_enabled: true\nstate_file: route-state.json\n"))
+	if errParse == nil {
+		t.Fatal("relative state_file was accepted")
+	}
+	if !strings.Contains(errParse.Error(), "absolute") {
+		t.Fatalf("error = %q, want absolute-path validation", errParse)
 	}
 }

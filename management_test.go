@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"path/filepath"
 	"testing"
 
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/pluginapi"
@@ -94,5 +96,30 @@ func TestManagementStatusRejectsNonGET(t *testing.T) {
 	}
 	if response.StatusCode != http.StatusMethodNotAllowed || response.Headers.Get("Allow") != http.MethodGet {
 		t.Fatalf("response = %#v", response)
+	}
+}
+
+func TestManagementStatusReportsPersistenceHealthWithoutPath(t *testing.T) {
+	cfg := persistentTestConfig(t, t.TempDir())
+	config := fmt.Sprintf("enabled: true\npersistence_enabled: true\nstate_file: %q\n", filepath.ToSlash(cfg.StateFile))
+	p, errBuild := buildPlugin([]byte(config))
+	if errBuild != nil {
+		t.Fatal(errBuild)
+	}
+	defer p.state.stopPersistence()
+
+	response, errStatus := p.HandleManagement(context.Background(), pluginapi.ManagementRequest{Method: http.MethodGet})
+	if errStatus != nil {
+		t.Fatal(errStatus)
+	}
+	var status managementStatus
+	if errDecode := json.Unmarshal(response.Body, &status); errDecode != nil {
+		t.Fatal(errDecode)
+	}
+	if !status.Config.PersistenceEnabled || !status.Persistence.Enabled || !status.Persistence.Healthy {
+		t.Fatalf("persistence status = %#v", status.Persistence)
+	}
+	if bytes.Contains(response.Body, []byte(cfg.StateFile)) || bytes.Contains(response.Body, []byte(filepath.ToSlash(cfg.StateFile))) {
+		t.Fatalf("status leaked state file path: %s", response.Body)
 	}
 }

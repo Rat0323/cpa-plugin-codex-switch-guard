@@ -34,7 +34,7 @@ func (p *switchSafePlugin) InterceptRequestAfterAuth(_ context.Context, req plug
 	}
 	p.diagnostics.beginRequest(req.RequestID)
 
-	inspection, errInspect := inspectPayload(req.Body)
+	inspection, errInspect := p.state.inspectPayload(req.Body)
 	if errInspect != nil {
 		if likelyContainsRouteBoundState(req.Body) {
 			if p.metrics != nil {
@@ -52,8 +52,8 @@ func (p *switchSafePlugin) InterceptRequestAfterAuth(_ context.Context, req plug
 		return pluginapi.RequestInterceptResponse{}, nil
 	}
 
-	sessionKey := sessionKeyFromRequest(req, inspection)
-	route, routeKnown := routeFingerprintFromRequest(req)
+	sessionKey := p.state.sessionKey(req, inspection)
+	route, routeKnown := p.state.routeFingerprint(req)
 	decision := p.state.prepare(req.RequestID, sessionKey, route, routeKnown, inspection.Signals)
 	decisionFields := diagnosticDecisionFields(sessionKey, route, routeKnown, decision, inspection.Signals)
 	if decision.Reject {

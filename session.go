@@ -12,14 +12,22 @@ import (
 const maxOpaqueIdentifierLength = 256
 
 func sessionKeyFromRequest(req pluginapi.RequestInterceptRequest, inspection payloadInspection) string {
+	return sessionKeyFromRequestWithDigester(req, inspection, processOpaqueDigester)
+}
+
+func sessionKeyFromRequestWithDigester(req pluginapi.RequestInterceptRequest, inspection payloadInspection, digester opaqueDigester) string {
 	callerScope := normalizeOpaqueIdentifier(metadataString(req.Metadata, callerScopeMetadataKey))
-	if kind, value := requestSessionIdentity(req, inspection); value != "" {
-		return opaqueDigest("session-v1", callerScope, kind, value)
+	if kind, value := requestSessionIdentityWithDigester(req, inspection, digester); value != "" {
+		return digester.digest("session-v1", callerScope, kind, value)
 	}
 	return ""
 }
 
 func requestSessionIdentity(req pluginapi.RequestInterceptRequest, inspection payloadInspection) (string, string) {
+	return requestSessionIdentityWithDigester(req, inspection, processOpaqueDigester)
+}
+
+func requestSessionIdentityWithDigester(req pluginapi.RequestInterceptRequest, inspection payloadInspection, digester opaqueDigester) (string, string) {
 	// Prefer the host's reconciled identity so this plugin follows the same
 	// session boundaries as CPA routing, including forks and subagents.
 	if value := normalizeOpaqueIdentifier(metadataString(req.Metadata, canonicalSessionIDMetadataKey)); value != "" {
@@ -30,10 +38,10 @@ func requestSessionIdentity(req pluginapi.RequestInterceptRequest, inspection pa
 	if value := normalizeOpaqueIdentifier(metadataString(req.Metadata, executionSessionMetadataKey)); value != "" {
 		return "execution", value
 	}
-	if kind, value := headerSessionIdentity(req.Headers); value != "" {
+	if kind, value := headerSessionIdentityWithDigester(req.Headers, digester); value != "" {
 		return kind, value
 	}
-	if kind, value := payloadSessionIdentity(inspection.Root); value != "" {
+	if kind, value := payloadSessionIdentityWithDigester(inspection.Root, digester); value != "" {
 		return kind, value
 	}
 	if value := normalizedRawJSONString(inspection.Root["prompt_cache_key"]); value != "" {
@@ -46,12 +54,17 @@ func requestSessionIdentity(req pluginapi.RequestInterceptRequest, inspection pa
 }
 
 func payloadSessionIdentity(root map[string]json.RawMessage) (string, string) {
+	return payloadSessionIdentityWithDigester(root, processOpaqueDigester)
+}
+
+func payloadSessionIdentityWithDigester(root map[string]json.RawMessage, digester opaqueDigester) (string, string) {
 	if len(root) == 0 {
 		return "", ""
 	}
-	if value := codexConversationIdentity(
+	if value := codexConversationIdentityWithDigester(
 		normalizedRawJSONString(root["session_id"]),
 		normalizedRawJSONString(root["thread_id"]),
+		digester,
 	); value != "" {
 		return "payload-codex-session", value
 	}
@@ -61,7 +74,7 @@ func payloadSessionIdentity(root map[string]json.RawMessage) (string, string) {
 		}
 	}
 	if metadata := normalizedRawJSONString(root["x-codex-turn-metadata"]); metadata != "" {
-		if kind, value := codexTurnMetadataIdentity(metadata); value != "" {
+		if kind, value := codexTurnMetadataIdentityWithDigester(metadata, digester); value != "" {
 			return kind, value
 		}
 	}
@@ -69,13 +82,14 @@ func payloadSessionIdentity(root map[string]json.RawMessage) (string, string) {
 		var clientMetadata map[string]json.RawMessage
 		if errUnmarshal := json.Unmarshal(clientMetadataRaw, &clientMetadata); errUnmarshal == nil {
 			if metadata := normalizedRawJSONString(clientMetadata["x-codex-turn-metadata"]); metadata != "" {
-				if kind, value := codexTurnMetadataIdentity(metadata); value != "" {
+				if kind, value := codexTurnMetadataIdentityWithDigester(metadata, digester); value != "" {
 					return kind, value
 				}
 			}
-			if value := codexConversationIdentity(
+			if value := codexConversationIdentityWithDigester(
 				normalizedRawJSONString(clientMetadata["session_id"]),
 				normalizedRawJSONString(clientMetadata["thread_id"]),
+				digester,
 			); value != "" {
 				return "client-metadata-codex-session", value
 			}
@@ -90,9 +104,14 @@ func payloadSessionIdentity(root map[string]json.RawMessage) (string, string) {
 }
 
 func headerSessionIdentity(headers http.Header) (string, string) {
-	if value := codexConversationIdentity(
+	return headerSessionIdentityWithDigester(headers, processOpaqueDigester)
+}
+
+func headerSessionIdentityWithDigester(headers http.Header, digester opaqueDigester) (string, string) {
+	if value := codexConversationIdentityWithDigester(
 		normalizeOpaqueIdentifier(headers.Get("Session-Id")),
 		normalizeOpaqueIdentifier(headers.Get("Thread-Id")),
+		digester,
 	); value != "" {
 		return "header-codex-session", value
 	}
@@ -102,19 +121,24 @@ func headerSessionIdentity(headers http.Header) (string, string) {
 		}
 	}
 	if metadata := normalizeOpaqueIdentifier(headers.Get("X-Codex-Turn-Metadata")); metadata != "" {
-		return codexTurnMetadataIdentity(metadata)
+		return codexTurnMetadataIdentityWithDigester(metadata, digester)
 	}
 	return "", ""
 }
 
 func codexTurnMetadataIdentity(raw string) (string, string) {
+	return codexTurnMetadataIdentityWithDigester(raw, processOpaqueDigester)
+}
+
+func codexTurnMetadataIdentityWithDigester(raw string, digester opaqueDigester) (string, string) {
 	var metadata map[string]json.RawMessage
 	if errUnmarshal := json.Unmarshal([]byte(raw), &metadata); errUnmarshal != nil {
 		return "", ""
 	}
-	if value := codexConversationIdentity(
+	if value := codexConversationIdentityWithDigester(
 		normalizedRawJSONString(metadata["session_id"]),
 		normalizedRawJSONString(metadata["thread_id"]),
+		digester,
 	); value != "" {
 		return "codex-turn-session", value
 	}
@@ -127,12 +151,16 @@ func codexTurnMetadataIdentity(raw string) (string, string) {
 }
 
 func codexConversationIdentity(sessionID, threadID string) string {
+	return codexConversationIdentityWithDigester(sessionID, threadID, processOpaqueDigester)
+}
+
+func codexConversationIdentityWithDigester(sessionID, threadID string, digester opaqueDigester) string {
 	sessionID = normalizeOpaqueIdentifier(sessionID)
 	threadID = normalizeOpaqueIdentifier(threadID)
 	if sessionID == "" && threadID == "" {
 		return ""
 	}
-	return opaqueDigest("codex-conversation-v1", sessionID, threadID)
+	return digester.digest("codex-conversation-v1", sessionID, threadID)
 }
 
 func normalizedRawJSONString(raw json.RawMessage) string {
