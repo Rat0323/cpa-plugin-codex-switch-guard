@@ -6,6 +6,18 @@ matching version section verbatim.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-10-11
+
+### Fixed
+
+- Restored plugin registration when installed from the CPA management plugin
+  store. v0.3.0 added strict YAML decoding that rejected the host-owned `store`
+  install manifest CPA writes alongside `enabled`, so store-installed plugins
+  loaded but returned no capabilities and appeared inactive in the management
+  panel. The parser now strips the host-owned `store` manifest before strict
+  decoding, while every other unknown field stays an error so misspelled policy
+  names are still rejected.
+
 ## [0.3.0] - 2026-10-11
 
 ### Added
@@ -208,7 +220,8 @@ Full diff: [v0.2.0...v0.2.1](https://github.com/Rat0323/cpa-plugin-codex-switch-
 Initial release. This version is deprecated because retry and session edge cases
 were corrected in `v0.1.1`.
 
-[Unreleased]: https://github.com/Rat0323/cpa-plugin-codex-switch-safe/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/Rat0323/cpa-plugin-codex-switch-safe/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/Rat0323/cpa-plugin-codex-switch-safe/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/Rat0323/cpa-plugin-codex-switch-safe/compare/v0.2.3...v0.3.0
 [0.2.3]: https://github.com/Rat0323/cpa-plugin-codex-switch-safe/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/Rat0323/cpa-plugin-codex-switch-safe/compare/v0.2.1...v0.2.2
