@@ -62,7 +62,16 @@ func defaultPluginConfig() pluginConfig {
 func parsePluginConfig(raw []byte) (pluginConfig, error) {
 	cfg := defaultPluginConfig()
 	if len(bytes.TrimSpace(raw)) > 0 {
-		decoder := yaml.NewDecoder(bytes.NewReader(raw))
+		// CPA's plugin store installer writes the marketplace manifest under a
+		// host-owned `store` key alongside runtime fields when a plugin is
+		// installed from the management UI. Strip it before strict decoding so
+		// store installs register, while every other unknown field stays an
+		// error so misspelled policy names cannot silently take effect.
+		stripped, errStrip := stripCPAStoreManifest(raw)
+		if errStrip != nil {
+			return cfg, fmt.Errorf("invalid %s config: %w", pluginID, errStrip)
+		}
+		decoder := yaml.NewDecoder(bytes.NewReader(stripped))
 		decoder.KnownFields(true)
 		if errUnmarshal := decoder.Decode(&cfg); errUnmarshal != nil {
 			return cfg, fmt.Errorf("invalid %s config: %w", pluginID, errUnmarshal)
@@ -115,4 +124,43 @@ func parsePluginConfig(raw []byte) (pluginConfig, error) {
 		return cfg, fmt.Errorf("diagnostics must be %q, %q, or %q", diagnosticsOff, diagnosticsActions, diagnosticsDebug)
 	}
 	return cfg, nil
+}
+
+// stripCPAStoreManifest removes the host-owned `store` installation manifest
+// from a raw plugin config so strict decoding accepts CPA store installs. The
+// manifest carries marketplace metadata and never influences plugin behavior,
+// so dropping it is safe. Every other field is left untouched and still
+// subject to strict decoding.
+func stripCPAStoreManifest(raw []byte) ([]byte, error) {
+	var root yaml.Node
+	if errDecode := yaml.Unmarshal(raw, &root); errDecode != nil {
+		return nil, errDecode
+	}
+	if root.Kind != yaml.DocumentNode || len(root.Content) == 0 {
+		// Not a mapping; let the strict decoder produce the canonical error.
+		return raw, nil
+	}
+	mapping := root.Content[0]
+	if mapping == nil || mapping.Kind != yaml.MappingNode {
+		return raw, nil
+	}
+	for index := 0; index+1 < len(mapping.Content); index += 2 {
+		key := mapping.Content[index]
+		if key == nil || key.Value != "store" {
+			continue
+		}
+		// Remove the key/value pair in place by slicing the mapping content.
+		mapping.Content = append(mapping.Content[:index], mapping.Content[index+2:]...)
+		break
+	}
+	var encoded bytes.Buffer
+	encoder := yaml.NewEncoder(&encoded)
+	encoder.SetIndent(2)
+	if errEncode := encoder.Encode(&root); errEncode != nil {
+		return nil, errEncode
+	}
+	if errClose := encoder.Close(); errClose != nil {
+		return nil, errClose
+	}
+	return encoded.Bytes(), nil
 }
