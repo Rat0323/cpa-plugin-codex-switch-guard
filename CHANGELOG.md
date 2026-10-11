@@ -20,6 +20,8 @@ matching version section verbatim.
   native plugin loading, registration, and management-route execution.
 - Added continuous fuzzing for payload sanitization, selective retired-item
   removal, session identity derivation, and pending-state index invariants.
+- Added real-host checks for missing and invalid management authentication and
+  for the absence of an unauthenticated plugin resource route.
 
 ### Changed
 
@@ -42,6 +44,8 @@ matching version section verbatim.
   misspelled policy names.
 - Accepted CPA's host-owned `priority` runtime field while retaining strict
   validation for unknown plugin configuration fields.
+- Pinned release builds to Go `1.26.9` and added reachable-vulnerability scanning
+  to CI so published libraries include current standard-library security fixes.
 
 ### Tests
 

@@ -16,6 +16,7 @@ permissions:
 
 env:
   PLUGIN_ID: codex-switch-safe
+  GOTOOLCHAIN: go1.26.9
 
 jobs:
   changes:
@@ -65,6 +66,10 @@ jobs:
         run: go test -race ./...
       - name: Vet
         run: go vet ./...
+      - name: Verify dependencies and scan reachable vulnerabilities
+        run: |
+          go mod verify
+          go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
 
   host-compatibility:
     needs: [changes, test]

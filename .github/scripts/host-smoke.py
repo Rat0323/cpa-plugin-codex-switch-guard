@@ -75,6 +75,27 @@ def fetch_status(port: int) -> dict:
         return json.load(response)
 
 
+def verify_private_status_route(port: int) -> None:
+    for path, headers, expected in [
+        ("/v0/management/plugins/codex-switch-safe/status", {}, {401, 403}),
+        (
+            "/v0/management/plugins/codex-switch-safe/status",
+            {"Authorization": "Bearer invalid-host-smoke-secret"},
+            {401, 403},
+        ),
+        ("/v0/resource/plugins/codex-switch-safe/status", {}, {404}),
+    ]:
+        request = urllib.request.Request(f"http://127.0.0.1:{port}{path}", headers=headers)
+        try:
+            with urllib.request.urlopen(request, timeout=1) as response:
+                code = response.status
+        except urllib.error.HTTPError as error:
+            code = error.code
+            error.close()
+        if code not in expected:
+            raise RuntimeError(f"private status route check failed: {path} returned HTTP {code}")
+
+
 def smoke(host: pathlib.Path, plugin: pathlib.Path, timeout: float) -> dict:
     with tempfile.TemporaryDirectory(prefix="codex-switch-safe-host-smoke-") as raw_dir:
         work_dir = pathlib.Path(raw_dir)
@@ -111,12 +132,14 @@ def smoke(host: pathlib.Path, plugin: pathlib.Path, timeout: float) -> dict:
                     )
                 try:
                     status = fetch_status(port)
-                    if status.get("plugin", {}).get("id") != "codex-switch-safe":
-                        raise RuntimeError(f"unexpected plugin status: {status}")
-                    return status
                 except (OSError, RuntimeError, urllib.error.URLError, json.JSONDecodeError) as error:
                     last_error = error
                     time.sleep(0.2)
+                    continue
+                if status.get("plugin", {}).get("id") != "codex-switch-safe":
+                    raise RuntimeError(f"unexpected plugin status: {status}")
+                verify_private_status_route(port)
+                return status
             raise RuntimeError(
                 f"CPA management route was not ready: {last_error}\n" + "\n".join(output[-80:])
             )
