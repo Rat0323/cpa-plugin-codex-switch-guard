@@ -97,6 +97,7 @@ type pendingRoute struct {
 	ObservedAt              time.Time
 	CleanStart              bool
 	CanClearTaint           bool
+	RetiredOverflow         bool
 	RetiredItemFingerprints []string
 }
 
@@ -150,6 +151,7 @@ func (s *routeStateStore) prepare(requestID, sessionKey string, route routeFinge
 	if !canTrack {
 		decision = failClosedDecision(signals, s.cfg.CompactionPolicy)
 		if decision.Strip && sessionKey != "" && requestID != "" {
+			retiredItemFingerprints, retiredOverflow := boundedUniqueFingerprints(signals.ItemFingerprints)
 			session := s.sessions[sessionKey]
 			session.UpdatedAt = now
 			s.sessions[sessionKey] = session
@@ -161,7 +163,8 @@ func (s *routeStateStore) prepare(requestID, sessionKey string, route routeFinge
 				Sequence:                s.sequence,
 				ObservedAt:              now,
 				CleanStart:              true,
-				RetiredItemFingerprints: uniqueFingerprints(signals.ItemFingerprints),
+				RetiredOverflow:         retiredOverflow,
+				RetiredItemFingerprints: retiredItemFingerprints,
 			}
 			s.trimPendingLocked()
 		}
@@ -222,8 +225,9 @@ func (s *routeStateStore) prepare(requestID, sessionKey string, route routeFinge
 
 	cleanStart := decision.Strip || !signals.hasRouteBoundState()
 	var retiredItemFingerprints []string
+	var retiredOverflow bool
 	if decision.Strip {
-		retiredItemFingerprints = uniqueFingerprints(signals.ItemFingerprints)
+		retiredItemFingerprints, retiredOverflow = boundedUniqueFingerprints(signals.ItemFingerprints)
 	}
 	s.sequence++
 	s.pending[pendingKey(requestID)] = pendingRoute{
@@ -234,6 +238,7 @@ func (s *routeStateStore) prepare(requestID, sessionKey string, route routeFinge
 		ObservedAt:              now,
 		CleanStart:              cleanStart,
 		CanClearTaint:           session.Tainted && cleanStart && !hasOtherPending,
+		RetiredOverflow:         retiredOverflow,
 		RetiredItemFingerprints: retiredItemFingerprints,
 	}
 	s.trimPendingLocked()
@@ -254,7 +259,7 @@ func failClosedDecision(signals stateSignals, policy compactionPolicy) routeDeci
 }
 
 func (s *routeStateStore) retireItemsLocked(session sessionRouteState, fingerprints []string, route routeFingerprint, routeKnown bool, now time.Time) sessionRouteState {
-	if len(fingerprints) == 0 {
+	if session.RetiredOverflow || len(fingerprints) == 0 {
 		session.UpdatedAt = now
 		return session
 	}
@@ -275,30 +280,20 @@ func (s *routeStateStore) retireItemsLocked(session sessionRouteState, fingerpri
 		} else {
 			delete(session.RetiredItemRoute, fingerprint)
 		}
-	}
-	for len(session.RetiredItems) > maxRetiredItemFingerprintsPerSession {
-		session.RetiredOverflow = true
-		var oldestFingerprint string
-		var oldestSequence uint64
-		for fingerprint, sequence := range session.RetiredItems {
-			if oldestFingerprint == "" || sequence < oldestSequence || (sequence == oldestSequence && fingerprint < oldestFingerprint) {
-				oldestFingerprint = fingerprint
-				oldestSequence = sequence
-			}
+		if len(session.RetiredItems) > maxRetiredItemFingerprintsPerSession {
+			return markRetiredOverflow(session, now)
 		}
-		delete(session.RetiredItems, oldestFingerprint)
-		delete(session.RetiredItemRoute, oldestFingerprint)
 	}
 	session.UpdatedAt = now
 	return session
 }
 
-func uniqueFingerprints(fingerprints []string) []string {
+func boundedUniqueFingerprints(fingerprints []string) ([]string, bool) {
 	if len(fingerprints) == 0 {
-		return nil
+		return nil, false
 	}
-	unique := make([]string, 0, len(fingerprints))
-	seen := make(map[string]struct{}, len(fingerprints))
+	unique := make([]string, 0, min(len(fingerprints), maxRetiredItemFingerprintsPerSession))
+	seen := make(map[string]struct{}, min(len(fingerprints), maxRetiredItemFingerprintsPerSession))
 	for _, fingerprint := range fingerprints {
 		if fingerprint == "" {
 			continue
@@ -306,10 +301,21 @@ func uniqueFingerprints(fingerprints []string) []string {
 		if _, exists := seen[fingerprint]; exists {
 			continue
 		}
+		if len(unique) == maxRetiredItemFingerprintsPerSession {
+			return nil, true
+		}
 		seen[fingerprint] = struct{}{}
 		unique = append(unique, fingerprint)
 	}
-	return unique
+	return unique, false
+}
+
+func markRetiredOverflow(session sessionRouteState, now time.Time) sessionRouteState {
+	session.RetiredOverflow = true
+	session.RetiredItems = nil
+	session.RetiredItemRoute = nil
+	session.UpdatedAt = now
+	return session
 }
 
 func retiredItemMatches(retired map[string]uint64, retiredRoutes map[string]routeFingerprint, observed []string, route routeFingerprint) []string {
@@ -359,7 +365,9 @@ func (s *routeStateStore) complete(completion pluginapi.RequestCompletion) {
 	}
 
 	if completion.Outcome == pluginapi.RequestCompletionSucceeded {
-		if len(pending.RetiredItemFingerprints) > 0 {
+		if pending.RetiredOverflow {
+			current = markRetiredOverflow(current, now)
+		} else if len(pending.RetiredItemFingerprints) > 0 {
 			current = s.retireItemsLocked(current, pending.RetiredItemFingerprints, pending.Route, pending.RouteKnown, now)
 		}
 		applied := false

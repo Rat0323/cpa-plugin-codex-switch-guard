@@ -383,7 +383,7 @@ func TestRouteStateCompletionRestoresRetiredItemsAfterSessionEviction(t *testing
 	}
 }
 
-func TestRouteStateBoundsRetiredItemFingerprints(t *testing.T) {
+func TestRouteStateStopsTrackingRetiredItemFingerprintsAfterOverflow(t *testing.T) {
 	store := newRouteStateStore(testConfig())
 	seedCommittedRoute(store, "session-a", routeFingerprint{Digest: "route-a"})
 	fingerprints := make([]string, maxRetiredItemFingerprintsPerSession+1)
@@ -395,23 +395,35 @@ func TestRouteStateBoundsRetiredItemFingerprints(t *testing.T) {
 		ItemFingerprints: fingerprints,
 	})
 	store.complete(pluginapi.RequestCompletion{RequestID: "switch", Outcome: pluginapi.RequestCompletionSucceeded})
-	retired := store.sessions["session-a"].RetiredItems
-	if len(retired) != maxRetiredItemFingerprintsPerSession {
-		t.Fatalf("retired length = %d, want %d", len(retired), maxRetiredItemFingerprintsPerSession)
-	}
-	if _, exists := retired[fingerprints[0]]; exists {
-		t.Fatal("oldest retired fingerprint was not evicted")
-	}
-	if _, exists := retired[fingerprints[len(fingerprints)-1]]; !exists {
-		t.Fatal("newest retired fingerprint was evicted")
-	}
-	if !store.sessions["session-a"].RetiredOverflow {
+	state := store.sessions["session-a"]
+	if !state.RetiredOverflow {
 		t.Fatal("retired overflow marker = false, want true")
+	}
+	if len(state.RetiredItems) != 0 || len(state.RetiredItemRoute) != 0 {
+		t.Fatalf("retired fingerprints retained after overflow: items=%d routes=%d", len(state.RetiredItems), len(state.RetiredItemRoute))
 	}
 
 	conservative := store.prepare("after-overflow", "session-a", routeFingerprint{Digest: "route-b"}, true, stateSignals{HasReasoning: true, ItemFingerprints: []string{"old-item"}})
 	if !conservative.Strip || len(conservative.BlockedItemFingerprints) != 0 {
 		t.Fatalf("overflow replay decision = %#v", conservative)
+	}
+}
+
+func TestRouteStateBoundsPendingRetiredItemFingerprints(t *testing.T) {
+	store := newRouteStateStore(testConfig())
+	seedCommittedRoute(store, "session-a", routeFingerprint{Digest: "route-a"})
+	fingerprints := make([]string, maxRetiredItemFingerprintsPerSession*4)
+	for index := range fingerprints {
+		fingerprints[index] = fmt.Sprintf("item-%04d", index)
+	}
+
+	store.prepare("switch", "session-a", routeFingerprint{Digest: "route-b"}, true, stateSignals{
+		HasReasoning:     true,
+		ItemFingerprints: fingerprints,
+	})
+	pending := store.pending[pendingKey("switch")]
+	if len(pending.RetiredItemFingerprints) > maxRetiredItemFingerprintsPerSession {
+		t.Fatalf("pending retired length = %d, want at most %d", len(pending.RetiredItemFingerprints), maxRetiredItemFingerprintsPerSession)
 	}
 }
 
