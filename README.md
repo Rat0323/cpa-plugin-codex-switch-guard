@@ -204,9 +204,9 @@ CPA restarts.
 
 ## Safety model
 
-- **Stable session identity:** CPA `execution_session_id` first, then Codex
-  session/thread headers, payload metadata, and `prompt_cache_key` fallbacks.
-  Per-turn IDs are ignored.
+- **Stable session identity:** CPA `canonical_session_id` first, then
+  `execution_session_id`, Codex session/thread headers, payload metadata, and
+  `prompt_cache_key` fallbacks. Per-turn IDs are ignored.
 - **Route identity:** CPA `selected_auth_id`, selected model, and
   `ToFormat: codex`.
 - **Retry-aware lifecycle:** a request ID keeps only its latest after-auth

@@ -36,7 +36,7 @@ func newOpaqueDigestKey() []byte {
 }
 
 func routeFingerprintFromRequest(req pluginapi.RequestInterceptRequest) (routeFingerprint, bool) {
-	authID := normalizeOpaqueIdentifier(metadataString(req.Metadata, "selected_auth_id"))
+	authID := normalizeOpaqueIdentifier(metadataString(req.Metadata, selectedAuthMetadataKey))
 	model := normalizeOpaqueIdentifier(req.Model)
 	toFormat := strings.ToLower(strings.TrimSpace(req.ToFormat))
 	if authID == "" || model == "" || toFormat != "codex" {

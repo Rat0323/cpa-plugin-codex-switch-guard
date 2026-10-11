@@ -159,7 +159,7 @@ CPA 插件优先级决定拦截器执行顺序。如果另一个请求拦截器�
 
 ## 安全模型
 
-- **稳定会话身份：** 优先使用 CPA `execution_session_id`，然后依次使用 Codex session/thread 请求头、载荷元数据和 `prompt_cache_key` 作为后备。忽略每轮独立的 ID。
+- **稳定会话身份：** 优先使用 CPA `canonical_session_id`，然后依次使用 `execution_session_id`、Codex session/thread 请求头、载荷元数据和 `prompt_cache_key` 作为后备。忽略每轮独立的 ID。
 - **路由身份：** 由 CPA `selected_auth_id`、所选模型和 `ToFormat: codex` 共同确定。
 - **感知重试的生命周期：** 一个请求 ID 只保留最新的认证后候选项，并且只有结果为 `succeeded` 时才提交路由。
 - **故障转移安全：** 失败、拒绝、取消和过期的尝试都不会推进已确认路由。
