@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -76,7 +77,7 @@ func TestManagementStatusReportsProtectionCountersAndStateWithoutIdentifiers(t *
 	}
 	privateValues := []string{"session-private", "thread-private", "auth-private", "response-private", "reasoning-private", "ciphertext-private"}
 	for _, value := range privateValues {
-		if containsBytes(statusResponse.Body, []byte(value)) {
+		if bytes.Contains(statusResponse.Body, []byte(value)) {
 			t.Fatalf("status leaked %q: %s", value, statusResponse.Body)
 		}
 	}
@@ -94,23 +95,4 @@ func TestManagementStatusRejectsNonGET(t *testing.T) {
 	if response.StatusCode != http.StatusMethodNotAllowed || response.Headers.Get("Allow") != http.MethodGet {
 		t.Fatalf("response = %#v", response)
 	}
-}
-
-func containsBytes(haystack, needle []byte) bool {
-	if len(needle) == 0 || len(needle) > len(haystack) {
-		return false
-	}
-	for offset := 0; offset+len(needle) <= len(haystack); offset++ {
-		matched := true
-		for index := range needle {
-			if haystack[offset+index] != needle[index] {
-				matched = false
-				break
-			}
-		}
-		if matched {
-			return true
-		}
-	}
-	return false
 }
