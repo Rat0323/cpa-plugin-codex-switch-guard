@@ -16,7 +16,7 @@ func buildPlugin(configYAML []byte) (*switchSafePlugin, error) {
 	}
 	return &switchSafePlugin{
 		cfg:         cfg,
-		state:       newRouteStateStore(cfg),
+		state:       newConfiguredRouteStateStore(cfg),
 		diagnostics: newDiagnosticReporter(cfg.Diagnostics, cfg.MaxPending, hostDiagnosticSink),
 		metrics:     newPluginMetrics(),
 	}, nil
@@ -34,6 +34,16 @@ func pluginMetadata() pluginapi.Metadata {
 				Type:        pluginapi.ConfigFieldTypeEnum,
 				EnumValues:  []string{string(compactionPolicyBlock), string(compactionPolicyStrip)},
 				Description: "Compaction handling on route changes. block (recommended) rejects unsafe switches; strip drops compaction state and continues.",
+			},
+			{
+				Name:        "persistence_enabled",
+				Type:        pluginapi.ConfigFieldTypeBoolean,
+				Description: "Keep opaque committed route bindings across CPA restarts. Default: false.",
+			},
+			{
+				Name:        "state_file",
+				Type:        pluginapi.ConfigFieldTypeString,
+				Description: "Optional absolute path for persisted route state. Default: the user config directory.",
 			},
 			{
 				Name:        "state_ttl",

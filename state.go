@@ -14,13 +14,16 @@ import (
 )
 
 type routeFingerprint struct {
-	Digest string
+	Digest string `json:"digest"`
 }
 
-// opaqueDigestKey is process-local on purpose. The plugin never persists
-// routing state, and a randomized key avoids making in-memory identifiers
-// linkable across restarts or plugin reloads.
-var opaqueDigestKey = newOpaqueDigestKey()
+type opaqueDigester struct {
+	key []byte
+}
+
+// processOpaqueDigester keeps non-persistent stores process-local. Persistent
+// stores replace it with the key loaded from their private state key file.
+var processOpaqueDigester = newOpaqueDigester(newOpaqueDigestKey())
 
 func newOpaqueDigestKey() []byte {
 	key := make([]byte, sha256.Size)
@@ -36,13 +39,17 @@ func newOpaqueDigestKey() []byte {
 }
 
 func routeFingerprintFromRequest(req pluginapi.RequestInterceptRequest) (routeFingerprint, bool) {
+	return routeFingerprintFromRequestWithDigester(req, processOpaqueDigester)
+}
+
+func routeFingerprintFromRequestWithDigester(req pluginapi.RequestInterceptRequest, digester opaqueDigester) (routeFingerprint, bool) {
 	authID := normalizeOpaqueIdentifier(metadataString(req.Metadata, selectedAuthMetadataKey))
 	model := normalizeOpaqueIdentifier(req.Model)
 	toFormat := strings.ToLower(strings.TrimSpace(req.ToFormat))
 	if authID == "" || model == "" || toFormat != "codex" {
 		return routeFingerprint{}, false
 	}
-	return routeFingerprint{Digest: opaqueDigest("route-v1", authID, model, toFormat)}, true
+	return routeFingerprint{Digest: digester.digest("route-v1", authID, model, toFormat)}, true
 }
 
 func (r routeFingerprint) equal(other routeFingerprint) bool {
@@ -50,7 +57,19 @@ func (r routeFingerprint) equal(other routeFingerprint) bool {
 }
 
 func opaqueDigest(namespace string, parts ...string) string {
-	hash := hmac.New(sha256.New, opaqueDigestKey)
+	return processOpaqueDigester.digest(namespace, parts...)
+}
+
+func newOpaqueDigester(key []byte) opaqueDigester {
+	cloned := append([]byte(nil), key...)
+	if len(cloned) != sha256.Size {
+		cloned = newOpaqueDigestKey()
+	}
+	return opaqueDigester{key: cloned}
+}
+
+func (d opaqueDigester) digest(namespace string, parts ...string) string {
+	hash := hmac.New(sha256.New, d.key)
 	_, _ = hash.Write([]byte(pluginID))
 	_, _ = hash.Write([]byte{0})
 	_, _ = hash.Write([]byte(namespace))
@@ -79,14 +98,14 @@ type routeDecision struct {
 const maxRetiredItemFingerprintsPerSession = 256
 
 type sessionRouteState struct {
-	Route            routeFingerprint
-	HasRoute         bool
-	Sequence         uint64
-	UpdatedAt        time.Time
-	Tainted          bool
-	RetiredItems     map[string]uint64
-	RetiredItemRoute map[string]routeFingerprint
-	RetiredOverflow  bool
+	Route            routeFingerprint            `json:"route"`
+	HasRoute         bool                        `json:"has_route"`
+	Sequence         uint64                      `json:"sequence"`
+	UpdatedAt        time.Time                   `json:"updated_at"`
+	Tainted          bool                        `json:"tainted"`
+	RetiredItems     map[string]uint64           `json:"retired_items,omitempty"`
+	RetiredItemRoute map[string]routeFingerprint `json:"retired_item_routes,omitempty"`
+	RetiredOverflow  bool                        `json:"retired_overflow,omitempty"`
 }
 
 type pendingRoute struct {
@@ -102,14 +121,24 @@ type pendingRoute struct {
 }
 
 type routeStateStore struct {
-	mu               sync.Mutex
-	cfg              pluginConfig
-	now              func() time.Time
-	nextPurge        time.Time
-	sequence         uint64
-	sessions         map[string]sessionRouteState
-	pending          map[string]pendingRoute
-	pendingBySession map[string]*pendingSessionIndex
+	mu                   sync.Mutex
+	cfg                  pluginConfig
+	now                  func() time.Time
+	digester             opaqueDigester
+	persistence          *statePersistence
+	persistenceWarning   error
+	lastPersistenceError error
+	lastSavedAt          time.Time
+	persistenceStopped   bool
+	persistWake          chan struct{}
+	persistStop          chan struct{}
+	persistDone          chan struct{}
+	persistDebounce      time.Duration
+	nextPurge            time.Time
+	sequence             uint64
+	sessions             map[string]sessionRouteState
+	pending              map[string]pendingRoute
+	pendingBySession     map[string]*pendingSessionIndex
 }
 
 type pendingSessionIndex struct {
@@ -124,6 +153,13 @@ type routeStateSnapshot struct {
 	OverflowSessions int `json:"overflow_sessions"`
 }
 
+type persistenceStatusSnapshot struct {
+	Enabled     bool      `json:"enabled"`
+	Healthy     bool      `json:"healthy"`
+	LastError   string    `json:"last_error,omitempty"`
+	LastSavedAt time.Time `json:"last_saved_at,omitempty"`
+}
+
 func newRouteStateStore(cfg pluginConfig) *routeStateStore {
 	return newRouteStateStoreWithClock(cfg, time.Now)
 }
@@ -135,10 +171,23 @@ func newRouteStateStoreWithClock(cfg pluginConfig, now func() time.Time) *routeS
 	return &routeStateStore{
 		cfg:              cfg,
 		now:              now,
+		digester:         processOpaqueDigester,
 		sessions:         make(map[string]sessionRouteState),
 		pending:          make(map[string]pendingRoute),
 		pendingBySession: make(map[string]*pendingSessionIndex),
 	}
+}
+
+func (s *routeStateStore) inspectPayload(raw []byte) (payloadInspection, error) {
+	return inspectPayloadWithDigester(raw, s.digester)
+}
+
+func (s *routeStateStore) sessionKey(req pluginapi.RequestInterceptRequest, inspection payloadInspection) string {
+	return sessionKeyFromRequestWithDigester(req, inspection, s.digester)
+}
+
+func (s *routeStateStore) routeFingerprint(req pluginapi.RequestInterceptRequest) (routeFingerprint, bool) {
+	return routeFingerprintFromRequestWithDigester(req, s.digester)
 }
 
 func (s *routeStateStore) snapshot() routeStateSnapshot {
@@ -147,6 +196,7 @@ func (s *routeStateStore) snapshot() routeStateSnapshot {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	defer s.markPersistenceDirtyLocked()
 	s.maybePurgeExpiredLocked(s.now())
 	snapshot := routeStateSnapshot{
 		Sessions: len(s.sessions),
@@ -172,6 +222,7 @@ func (s *routeStateStore) prepare(requestID, sessionKey string, route routeFinge
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	defer s.markPersistenceDirtyLocked()
 	now := s.now()
 	s.maybePurgeExpiredLocked(now)
 
@@ -180,7 +231,7 @@ func (s *routeStateStore) prepare(requestID, sessionKey string, route routeFinge
 		// CPA calls the after-auth hook for each retry candidate. Replace the
 		// previous candidate for this one logical request instead of treating it
 		// as independent concurrency.
-		s.deletePendingLocked(pendingKey(requestID))
+		s.deletePendingLocked(s.pendingKey(requestID))
 	}
 
 	decision := routeDecision{Relation: routeRelationUnknown}
@@ -194,7 +245,7 @@ func (s *routeStateStore) prepare(requestID, sessionKey string, route routeFinge
 			s.sessions[sessionKey] = session
 			s.trimSessionsLocked()
 			s.sequence++
-			s.setPendingLocked(pendingKey(requestID), pendingRoute{
+			s.setPendingLocked(s.pendingKey(requestID), pendingRoute{
 				SessionKey:              sessionKey,
 				RouteKnown:              false,
 				Sequence:                s.sequence,
@@ -267,7 +318,7 @@ func (s *routeStateStore) prepare(requestID, sessionKey string, route routeFinge
 		retiredItemFingerprints, retiredOverflow = boundedUniqueFingerprints(signals.ItemFingerprints)
 	}
 	s.sequence++
-	s.setPendingLocked(pendingKey(requestID), pendingRoute{
+	s.setPendingLocked(s.pendingKey(requestID), pendingRoute{
 		SessionKey:              sessionKey,
 		Route:                   route,
 		RouteKnown:              true,
@@ -394,13 +445,14 @@ func (s *routeStateStore) complete(completion pluginapi.RequestCompletion) bool 
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	defer s.markPersistenceDirtyLocked()
 	now := s.now()
 	s.maybePurgeExpiredLocked(now)
-	pending, exists := s.pending[pendingKey(requestID)]
+	pending, exists := s.pending[s.pendingKey(requestID)]
 	if !exists {
 		return false
 	}
-	s.deletePendingLocked(pendingKey(requestID))
+	s.deletePendingLocked(s.pendingKey(requestID))
 
 	current, existsCurrent := s.sessions[pending.SessionKey]
 	if !existsCurrent {
@@ -457,6 +509,7 @@ func (s *routeStateStore) reset() {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	defer s.markPersistenceDirtyLocked()
 	s.sequence = 0
 	s.nextPurge = time.Time{}
 	s.sessions = make(map[string]sessionRouteState)
@@ -470,11 +523,15 @@ func (s *routeStateStore) discardPending(requestID string) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.deletePendingLocked(pendingKey(requestID))
+	s.deletePendingLocked(s.pendingKey(requestID))
 }
 
 func pendingKey(requestID string) string {
-	return opaqueDigest("pending-v1", strings.TrimSpace(requestID))
+	return processOpaqueDigester.digest("pending-v1", strings.TrimSpace(requestID))
+}
+
+func (s *routeStateStore) pendingKey(requestID string) string {
+	return s.digester.digest("pending-v1", strings.TrimSpace(requestID))
 }
 
 func (s *routeStateStore) setPendingLocked(key string, pending pendingRoute) {

@@ -24,6 +24,7 @@ type payloadInspection struct {
 	InputItems []json.RawMessage
 	InputArray bool
 	Signals    stateSignals
+	digester   opaqueDigester
 }
 
 type sanitizeStats struct {
@@ -37,7 +38,12 @@ func (s sanitizeStats) changed() bool {
 }
 
 func inspectPayload(raw []byte) (payloadInspection, error) {
+	return inspectPayloadWithDigester(raw, processOpaqueDigester)
+}
+
+func inspectPayloadWithDigester(raw []byte, digester opaqueDigester) (payloadInspection, error) {
 	inspection := payloadInspection{Raw: raw}
+	inspection.digester = digester
 	if len(bytes.TrimSpace(raw)) == 0 {
 		return inspection, fmt.Errorf("request body is empty")
 	}
@@ -60,7 +66,7 @@ func inspectPayload(raw []byte) (payloadInspection, error) {
 	}
 	inspection.InputArray = true
 	for _, item := range inspection.InputItems {
-		kind, fingerprint, ok := routeBoundInputItem(item)
+		kind, fingerprint, ok := routeBoundInputItemWithDigester(item, digester)
 		if !ok {
 			continue
 		}
@@ -76,6 +82,10 @@ func inspectPayload(raw []byte) (payloadInspection, error) {
 }
 
 func routeBoundInputItem(raw json.RawMessage) (string, string, bool) {
+	return routeBoundInputItemWithDigester(raw, processOpaqueDigester)
+}
+
+func routeBoundInputItemWithDigester(raw json.RawMessage, digester opaqueDigester) (string, string, bool) {
 	var item struct {
 		Type             string          `json:"type"`
 		ID               string          `json:"id"`
@@ -89,11 +99,11 @@ func routeBoundInputItem(raw json.RawMessage) (string, string, bool) {
 		return "", "", false
 	}
 	if id := strings.TrimSpace(item.ID); id != "" {
-		return kind, opaqueDigest("route-bound-item-v1", kind, "id", id), true
+		return kind, digester.digest("route-bound-item-v1", kind, "id", id), true
 	}
 	var encryptedContent string
 	if errUnmarshal := json.Unmarshal(item.EncryptedContent, &encryptedContent); errUnmarshal == nil && encryptedContent != "" {
-		return kind, opaqueDigest("route-bound-item-v1", kind, "encrypted-content", encryptedContent), true
+		return kind, digester.digest("route-bound-item-v1", kind, "encrypted-content", encryptedContent), true
 	}
 
 	// encoding/json emits deterministic object-key ordering, so this fallback
@@ -104,7 +114,7 @@ func routeBoundInputItem(raw json.RawMessage) (string, string, bool) {
 			raw = encoded
 		}
 	}
-	return kind, opaqueDigest("route-bound-item-v1", kind, "canonical-item", string(raw)), true
+	return kind, digester.digest("route-bound-item-v1", kind, "canonical-item", string(raw)), true
 }
 
 // stripRouteBoundState deliberately changes only top-level Responses input
@@ -188,7 +198,7 @@ func (p payloadInspection) stripRetiredRouteBoundItemsWithStats(fingerprints []s
 
 	filtered := make([]json.RawMessage, 0, len(p.InputItems))
 	for _, item := range p.InputItems {
-		kind, fingerprint, ok := routeBoundInputItem(item)
+		kind, fingerprint, ok := routeBoundInputItemWithDigester(item, p.digester)
 		if ok {
 			if _, remove := blocked[fingerprint]; remove {
 				if kind == "reasoning" {

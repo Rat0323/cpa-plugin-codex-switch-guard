@@ -21,15 +21,17 @@ type managementStatus struct {
 	UptimeSeconds int64 `json:"uptime_seconds"`
 	Enabled       bool  `json:"enabled"`
 	Config        struct {
-		CompactionPolicy string `json:"compaction_policy"`
-		StateTTL         string `json:"state_ttl"`
-		MaxSessions      int    `json:"max_sessions"`
-		MaxPending       int    `json:"max_pending"`
-		Diagnostics      string `json:"diagnostics"`
-		Priority         int    `json:"priority"`
+		CompactionPolicy   string `json:"compaction_policy"`
+		PersistenceEnabled bool   `json:"persistence_enabled"`
+		StateTTL           string `json:"state_ttl"`
+		MaxSessions        int    `json:"max_sessions"`
+		MaxPending         int    `json:"max_pending"`
+		Diagnostics        string `json:"diagnostics"`
+		Priority           int    `json:"priority"`
 	} `json:"config"`
-	State    routeStateSnapshot `json:"state"`
-	Counters protectionCounters `json:"counters"`
+	State       routeStateSnapshot        `json:"state"`
+	Persistence persistenceStatusSnapshot `json:"persistence"`
+	Counters    protectionCounters        `json:"counters"`
 }
 
 var _ pluginapi.ManagementAPI = (*switchSafePlugin)(nil)
@@ -61,12 +63,14 @@ func (p *switchSafePlugin) HandleManagement(_ context.Context, req pluginapi.Man
 	if p != nil {
 		status.Enabled = p.cfg.Enabled
 		status.Config.CompactionPolicy = string(p.cfg.CompactionPolicy)
+		status.Config.PersistenceEnabled = p.cfg.PersistenceEnabled
 		status.Config.StateTTL = p.cfg.StateTTL.String()
 		status.Config.MaxSessions = p.cfg.MaxSessions
 		status.Config.MaxPending = p.cfg.MaxPending
 		status.Config.Diagnostics = string(p.cfg.Diagnostics)
 		status.Config.Priority = p.cfg.Priority
 		status.State = p.state.snapshot()
+		status.Persistence = p.state.persistenceStatus()
 		status.Counters = p.metrics.snapshot()
 		status.UptimeSeconds = int64(p.metrics.uptime(time.Now()) / time.Second)
 	}
