@@ -4,7 +4,7 @@ All notable user-facing changes to Codex Switch Guard are documented here.
 The project follows semantic versioning, and release automation publishes the
 matching version section verbatim.
 
-## [0.5.1] - 2026-10-12
+## [1.0.0] - 2026-10-12
 
 ### Added
 
@@ -32,6 +32,17 @@ matching version section verbatim.
 - Renamed the protection diagnostic action from `block_compaction` to
   `block_route_state` and added `reasoning_blocked`, `compaction_blocked`, and
   `previous_response_id_blocked` fields.
+
+### Migration
+
+- This is a clean rename release. The plugin ID, repository, release assets, and
+  documentation use `codex-switch-guard`; the old repository URL redirects to the
+  new repository.
+- Remove the old `codex-switch-safe` library and configuration key before
+  installing `codex-switch-guard`. CPA does not automatically remove the old
+  local plugin file.
+- No state migration is required. Earlier releases used the old plugin identity,
+  so `1.0.0` creates a new state file on first start.
 
 ## [0.3.0] - 2026-09-15
 
@@ -194,8 +205,8 @@ Full diff: [v0.2.0...v0.2.1](https://github.com/Rat0323/cpa-plugin-codex-switch-
 Initial release. This version is deprecated because retry and session edge cases
 were corrected in `v0.1.1`.
 
-[Unreleased]: https://github.com/Rat0323/cpa-plugin-codex-switch-guard/compare/v0.5.1...HEAD
-[0.5.1]: https://github.com/Rat0323/cpa-plugin-codex-switch-guard/compare/v0.5.0...v0.5.1
+[Unreleased]: https://github.com/Rat0323/cpa-plugin-codex-switch-guard/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/Rat0323/cpa-plugin-codex-switch-guard/releases/tag/v1.0.0
 [0.3.0]: https://github.com/Rat0323/cpa-plugin-codex-switch-guard/compare/v0.2.3...v0.3.0
 [0.2.3]: https://github.com/Rat0323/cpa-plugin-codex-switch-guard/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/Rat0323/cpa-plugin-codex-switch-guard/compare/v0.2.1...v0.2.2

@@ -190,13 +190,14 @@ CPA 插件优先级决定拦截器执行顺序。如果另一个请求拦截器�
 
 ## 从 Codex Switch Safe 迁移
 
-`0.3.0` 将插件从 Codex Switch Safe 更名为 Codex Switch Guard。安装
-`codex-switch-guard` 前，应从 CPA 插件目录删除旧的 `codex-switch-safe` 库，并把
-配置键从 `codex-switch-safe` 改为 `codex-switch-guard`，不要同时加载两个库。HTTP
-错误类型同步改为 `codex_switch_guard_reset_required`。
+`1.0.0` 是正式切换新身份的版本。插件 ID、仓库名、发行资产和文档都统一为
+`codex-switch-guard` / `cpa-plugin-codex-switch-guard`。旧仓库地址会重定向到新仓库，
+但 CPA 不会自动删除本地旧插件文件。安装 `codex-switch-guard` 前，应从 CPA 插件目录
+删除旧的 `codex-switch-safe` 库，并把配置键从 `codex-switch-safe` 改为
+`codex-switch-guard`，不要同时加载两个库。HTTP 错误类型同步改为
+`codex_switch_guard_reset_required`。
 
-不需要迁移状态。早期版本的全部状态只保留在内存中，`0.3.0` 首次启动时会创建新的
-状态文件。
+不需要迁移状态。早期版本按旧插件身份保存状态，`1.0.0` 首次启动时会创建新的状态文件。
 
 ## 开发
 

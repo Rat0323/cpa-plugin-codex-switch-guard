@@ -129,7 +129,7 @@ func TestABISchedulerPickUsesRegisteredPlugin(t *testing.T) {
 
 func TestPluginMetadataUsesSwitchGuardIdentityAndPersistenceFields(t *testing.T) {
 	metadata := pluginMetadata()
-	if metadata.Name != "Codex Switch Guard" || metadata.Version != "0.5.1" || metadata.GitHubRepository != "https://github.com/Rat0323/cpa-plugin-codex-switch-guard" {
+	if metadata.Name != "Codex Switch Guard" || metadata.Version != "1.0.0" || metadata.GitHubRepository != "https://github.com/Rat0323/cpa-plugin-codex-switch-guard" {
 		t.Fatalf("metadata = %#v", metadata)
 	}
 	fields := make(map[string]bool, len(metadata.ConfigFields))

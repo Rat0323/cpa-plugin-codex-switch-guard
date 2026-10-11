@@ -275,14 +275,17 @@ encrypted state portable between credentials.
 
 ## Migrating from Codex Switch Safe
 
-Version `0.3.0` renames the plugin from Codex Switch Safe to Codex Switch
-Guard. Remove the old `codex-switch-safe` library before installing
+Version `1.0.0` is the clean rename release. The plugin ID, repository, release
+assets, and documentation now use `codex-switch-guard` and
+`cpa-plugin-codex-switch-guard`. The old repository URL redirects to the new
+repository, but CPA does not automatically remove the old local plugin file.
+Remove the old `codex-switch-safe` library before installing
 `codex-switch-guard`, rename the CPA configuration key from `codex-switch-safe`
 to `codex-switch-guard`, and do not load both libraries at the same time. The
 HTTP error type is now `codex_switch_guard_reset_required`.
 
-No state migration is required. Earlier releases kept all state in memory, so
-the first `0.3.0` start creates a new state file.
+No state migration is required. Earlier releases kept state under the old
+plugin identity, so the first `1.0.0` start creates a new state file.
 
 ## Development
 
