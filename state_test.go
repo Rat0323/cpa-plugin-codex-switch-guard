@@ -72,6 +72,43 @@ func TestRouteStateUsesLastSelectedAttemptForRetry(t *testing.T) {
 	}
 }
 
+func TestRouteStatePendingIndexTracksReplacementDiscardExpiryAndTrim(t *testing.T) {
+	now := time.Date(2026, time.October, 11, 12, 0, 0, 0, time.UTC)
+	cfg := testConfig()
+	cfg.StateTTL = time.Minute
+	cfg.MaxPending = 1
+	store := newRouteStateStoreWithClock(cfg, func() time.Time { return now })
+	routeA := routeFingerprint{Digest: "route-a"}
+	routeB := routeFingerprint{Digest: "route-b"}
+
+	store.prepare("retry", "session-a", routeA, true, stateSignals{})
+	assertPendingSessionIndex(t, store, "session-a", 1, map[string]int{"route-a": 1})
+
+	store.prepare("retry", "session-a", routeB, true, stateSignals{})
+	assertPendingSessionIndex(t, store, "session-a", 1, map[string]int{"route-b": 1})
+	store.discardPending("retry")
+	assertPendingSessionIndex(t, store, "session-a", 0, nil)
+
+	store.prepare("old", "session-old", routeA, true, stateSignals{})
+	now = now.Add(2 * time.Minute)
+	store.prepare("new", "session-new", routeB, true, stateSignals{})
+	assertPendingSessionIndex(t, store, "session-old", 0, nil)
+	assertPendingSessionIndex(t, store, "session-new", 1, map[string]int{"route-b": 1})
+
+	now = now.Add(time.Second)
+	store.prepare("newer", "session-newer", routeA, true, stateSignals{})
+	assertPendingSessionIndex(t, store, "session-new", 0, nil)
+	assertPendingSessionIndex(t, store, "session-newer", 1, map[string]int{"route-a": 1})
+}
+
+func TestRouteStatePendingIndexTreatsUnknownRouteAsMismatch(t *testing.T) {
+	store := newRouteStateStore(testConfig())
+	store.setPendingLocked("unknown", pendingRoute{SessionKey: "session-a", RouteKnown: false})
+	if !store.hasConcurrentRouteMismatchLocked("session-a", routeFingerprint{Digest: "route-a"}) {
+		t.Fatal("unknown pending route did not create a conservative mismatch")
+	}
+}
+
 func TestRouteStateDoesNotRetireItemsFromFailedCandidate(t *testing.T) {
 	store := newRouteStateStore(testConfig())
 	routeA := routeFingerprint{Digest: "route-a"}
@@ -457,4 +494,26 @@ func testConfig() pluginConfig {
 func seedCommittedRoute(store *routeStateStore, session string, route routeFingerprint) {
 	store.prepare("seed-"+session, session, route, true, stateSignals{})
 	store.complete(pluginapi.RequestCompletion{RequestID: "seed-" + session, Outcome: pluginapi.RequestCompletionSucceeded})
+}
+
+func assertPendingSessionIndex(t *testing.T, store *routeStateStore, sessionKey string, wantCount int, wantRoutes map[string]int) {
+	t.Helper()
+	index := store.pendingBySession[sessionKey]
+	if wantCount == 0 {
+		if index != nil {
+			t.Fatalf("pending index %q = %#v, want absent", sessionKey, index)
+		}
+		return
+	}
+	if index == nil || index.Count != wantCount {
+		t.Fatalf("pending index %q = %#v, want count %d", sessionKey, index, wantCount)
+	}
+	if len(index.RouteCounts) != len(wantRoutes) {
+		t.Fatalf("route counts %q = %#v, want %#v", sessionKey, index.RouteCounts, wantRoutes)
+	}
+	for route, want := range wantRoutes {
+		if index.RouteCounts[route] != want {
+			t.Fatalf("route count %q/%q = %d, want %d", sessionKey, route, index.RouteCounts[route], want)
+		}
+	}
 }
