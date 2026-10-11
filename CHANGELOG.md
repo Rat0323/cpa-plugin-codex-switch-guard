@@ -10,9 +10,10 @@ matching version section verbatim.
 
 ### Added
 
-- Added native-library smoke coverage that loads every platform build and
-  exercises registration, interception, completion, buffer release, and
-  shutdown through the exported CPA ABI before packaging.
+- Added native-library smoke coverage on five native platform runners for
+  registration, interception, completion, buffer release, and shutdown through
+  the exported CPA ABI. Windows ARM64 is cross-built and packaged, but is not
+  runtime-tested on an ARM64 host.
 - Added the authenticated
   `GET /v0/management/plugins/codex-switch-safe/status` endpoint with
   privacy-safe protection counters, bounded-state gauges, effective settings,
