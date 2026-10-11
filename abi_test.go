@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"testing"
 
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/pluginabi"
@@ -58,9 +59,80 @@ func TestABIRegistrationAdvertisesLifecycleAndSchema(t *testing.T) {
 			if result.SchemaVersion != tc.wantVersion {
 				t.Fatalf("schema_version = %d, want %d", result.SchemaVersion, tc.wantVersion)
 			}
-			if !result.Capabilities.RequestInterceptor || !result.Capabilities.RequestLifecyclePlugin {
+			if !result.Capabilities.RequestInterceptor || !result.Capabilities.RequestLifecyclePlugin || !result.Capabilities.ManagementAPI {
 				t.Fatalf("capabilities = %#v", result.Capabilities)
 			}
 		})
+	}
+}
+
+func TestABIManagementStatus(t *testing.T) {
+	t.Cleanup(func() {
+		switchSafeABIState.Lock()
+		switchSafeABIState.plugin = nil
+		switchSafeABIState.Unlock()
+	})
+
+	registerRequest, errMarshal := json.Marshal(abiLifecycleRequest{SchemaVersion: pluginSchemaVersion})
+	if errMarshal != nil {
+		t.Fatal(errMarshal)
+	}
+	if _, errRegister := handleABIMethod(context.Background(), pluginabi.MethodPluginRegister, registerRequest); errRegister != nil {
+		t.Fatal(errRegister)
+	}
+
+	rawRegistration, errManagement := handleABIMethod(context.Background(), pluginabi.MethodManagementRegister, []byte(`{}`))
+	if errManagement != nil {
+		t.Fatal(errManagement)
+	}
+	var registrationEnvelope abiEnvelope
+	if errDecode := json.Unmarshal(rawRegistration, &registrationEnvelope); errDecode != nil {
+		t.Fatal(errDecode)
+	}
+	var registration struct {
+		Routes []struct {
+			Method string
+			Path   string
+		}
+		Resources []json.RawMessage
+	}
+	if errDecode := json.Unmarshal(registrationEnvelope.Result, &registration); errDecode != nil {
+		t.Fatal(errDecode)
+	}
+	if len(registration.Routes) != 1 || registration.Routes[0].Method != http.MethodGet || registration.Routes[0].Path != "/plugins/codex-switch-safe/status" || len(registration.Resources) != 0 {
+		t.Fatalf("registration = %#v", registration)
+	}
+
+	handleRequest, errMarshal := json.Marshal(map[string]any{
+		"Method": http.MethodGet,
+		"Path":   "/v0/management/plugins/codex-switch-safe/status",
+	})
+	if errMarshal != nil {
+		t.Fatal(errMarshal)
+	}
+	rawStatus, errHandle := handleABIMethod(context.Background(), pluginabi.MethodManagementHandle, handleRequest)
+	if errHandle != nil {
+		t.Fatal(errHandle)
+	}
+	var statusEnvelope abiEnvelope
+	if errDecode := json.Unmarshal(rawStatus, &statusEnvelope); errDecode != nil {
+		t.Fatal(errDecode)
+	}
+	var response struct {
+		StatusCode int
+		Body       []byte
+	}
+	if errDecode := json.Unmarshal(statusEnvelope.Result, &response); errDecode != nil {
+		t.Fatal(errDecode)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status response = %#v", response)
+	}
+	var status managementStatus
+	if errDecode := json.Unmarshal(response.Body, &status); errDecode != nil {
+		t.Fatal(errDecode)
+	}
+	if status.Plugin.ID != pluginID {
+		t.Fatalf("status = %#v", status)
 	}
 }

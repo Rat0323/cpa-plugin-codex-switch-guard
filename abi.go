@@ -247,6 +247,31 @@ func handleABIMethod(ctx context.Context, method string, request []byte) ([]byte
 			return nil, errComplete
 		}
 		return abiOKEnvelope(struct{}{})
+	case pluginabi.MethodManagementRegister:
+		var req pluginapi.ManagementRegistrationRequest
+		if len(request) > 0 {
+			if errDecode := json.Unmarshal(request, &req); errDecode != nil {
+				return nil, errDecode
+			}
+		}
+		resp, errRegister := p.RegisterManagement(ctx, req)
+		if errRegister != nil {
+			return nil, errRegister
+		}
+		for index := range resp.Routes {
+			resp.Routes[index].Handler = nil
+		}
+		for index := range resp.Resources {
+			resp.Resources[index].Handler = nil
+		}
+		return abiOKEnvelope(resp)
+	case pluginabi.MethodManagementHandle:
+		var req pluginapi.ManagementRequest
+		if errDecode := json.Unmarshal(request, &req); errDecode != nil {
+			return nil, errDecode
+		}
+		resp, errHandle := p.HandleManagement(ctx, req)
+		return abiOKEnvelopeWithError(resp, errHandle)
 	default:
 		return abiErrorEnvelope("unknown_method", "unknown method: "+method), nil
 	}

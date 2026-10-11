@@ -110,6 +110,13 @@ type routeStateStore struct {
 	pending  map[string]pendingRoute
 }
 
+type routeStateSnapshot struct {
+	Sessions         int `json:"sessions"`
+	Pending          int `json:"pending"`
+	TaintedSessions  int `json:"tainted_sessions"`
+	OverflowSessions int `json:"overflow_sessions"`
+}
+
 func newRouteStateStore(cfg pluginConfig) *routeStateStore {
 	return newRouteStateStoreWithClock(cfg, time.Now)
 }
@@ -124,6 +131,28 @@ func newRouteStateStoreWithClock(cfg pluginConfig, now func() time.Time) *routeS
 		sessions: make(map[string]sessionRouteState),
 		pending:  make(map[string]pendingRoute),
 	}
+}
+
+func (s *routeStateStore) snapshot() routeStateSnapshot {
+	if s == nil {
+		return routeStateSnapshot{}
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.purgeExpiredLocked(s.now())
+	snapshot := routeStateSnapshot{
+		Sessions: len(s.sessions),
+		Pending:  len(s.pending),
+	}
+	for _, session := range s.sessions {
+		if session.Tainted {
+			snapshot.TaintedSessions++
+		}
+		if session.RetiredOverflow {
+			snapshot.OverflowSessions++
+		}
+	}
+	return snapshot
 }
 
 // prepare records only the final selected-auth candidate for a logical request.
@@ -346,13 +375,13 @@ func retiredItemMatches(retired map[string]uint64, retiredRoutes map[string]rout
 	return matches
 }
 
-func (s *routeStateStore) complete(completion pluginapi.RequestCompletion) {
+func (s *routeStateStore) complete(completion pluginapi.RequestCompletion) bool {
 	if s == nil {
-		return
+		return false
 	}
 	requestID := strings.TrimSpace(completion.RequestID)
 	if requestID == "" {
-		return
+		return false
 	}
 
 	s.mu.Lock()
@@ -361,7 +390,7 @@ func (s *routeStateStore) complete(completion pluginapi.RequestCompletion) {
 	s.purgeExpiredLocked(now)
 	pending, exists := s.pending[pendingKey(requestID)]
 	if !exists {
-		return
+		return false
 	}
 	delete(s.pending, pendingKey(requestID))
 
@@ -393,11 +422,11 @@ func (s *routeStateStore) complete(completion pluginapi.RequestCompletion) {
 		}
 		s.sessions[pending.SessionKey] = current
 		s.trimSessionsLocked()
-		return
+		return true
 	}
 
 	if !hasInvalidEncryptedContentError(completion.Error) {
-		return
+		return true
 	}
 
 	// The upstream has rejected a route-bound item despite the selected route.
@@ -411,6 +440,7 @@ func (s *routeStateStore) complete(completion pluginapi.RequestCompletion) {
 	}
 	s.sessions[pending.SessionKey] = current
 	s.trimSessionsLocked()
+	return true
 }
 
 func (s *routeStateStore) reset() {

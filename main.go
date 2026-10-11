@@ -18,6 +18,7 @@ func buildPlugin(configYAML []byte) (*switchSafePlugin, error) {
 		cfg:         cfg,
 		state:       newRouteStateStore(cfg),
 		diagnostics: newDiagnosticReporter(cfg.Diagnostics, cfg.MaxPending, hostDiagnosticSink),
+		metrics:     newPluginMetrics(),
 	}, nil
 }
 

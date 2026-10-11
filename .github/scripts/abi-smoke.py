@@ -121,8 +121,18 @@ def main() -> int:
         capabilities = registration.get("capabilities", {})
         if not capabilities.get("request_interceptor") or not capabilities.get(
             "request_lifecycle_plugin"
-        ):
+        ) or not capabilities.get("management_api"):
             raise RuntimeError(f"missing capabilities: {capabilities}")
+
+        management = invoke(plugin, "management.register", {})["result"]
+        routes = management.get("Routes", management.get("routes", []))
+        if len(routes) != 1:
+            raise RuntimeError(f"unexpected management routes: {management}")
+        route = routes[0]
+        if route.get("Method", route.get("method")) != "GET" or route.get(
+            "Path", route.get("path")
+        ) != "/plugins/codex-switch-safe/status":
+            raise RuntimeError(f"unexpected management route: {route}")
 
         request_body = b'{"input":[{"type":"message","role":"user","content":"smoke"}]}'
         invoke(
@@ -146,6 +156,21 @@ def main() -> int:
             "request.complete",
             {"RequestID": "abi-smoke-request", "Outcome": "succeeded"},
         )
+        status_response = invoke(
+            plugin,
+            "management.handle",
+            {
+                "Method": "GET",
+                "Path": "/v0/management/plugins/codex-switch-safe/status",
+            },
+        )["result"]
+        if status_response.get("StatusCode") != 200:
+            raise RuntimeError(f"unexpected management response: {status_response}")
+        status = json.loads(base64.b64decode(status_response["Body"]))
+        if status.get("plugin", {}).get("id") != "codex-switch-safe":
+            raise RuntimeError(f"unexpected status identity: {status}")
+        if status.get("counters", {}).get("requests_observed") != 1:
+            raise RuntimeError(f"unexpected status counters: {status}")
     finally:
         plugin.shutdown()
 
