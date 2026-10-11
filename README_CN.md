@@ -135,7 +135,23 @@ plugins:
 
 CPA `7.2.130` 暴露的插件配置字段没有独立的默认值属性。因此，在保存覆盖值之前，管理页面可能将这些字段显示为空。字段为空或省略都是有效配置，插件会应用上表中的运行时默认值。
 
+插件注册时会拒绝未知配置字段。这样，字段拼写错误会产生明确的启动错误，而不会静默回退到其他策略。
+
 CPA 插件优先级决定拦截器执行顺序。如果另一个请求拦截器会重写 Codex 请求体，应为 Codex Switch Safe 设置更低的优先级，使其在重写后执行最终安全检查。
+
+### 推荐启用 CPA 会话亲和
+
+在支持通用会话亲和的 CPA 版本中，建议启用它，以减少正常运行时的凭据切换：
+
+```yaml
+routing:
+  strategy: round-robin
+  session-affinity: true
+  session-affinity-ttl: "4h"
+  session-affinity-subagents: true
+```
+
+建议让 `routing.session-affinity-ttl` 与本插件的 `state_ttl` 保持一致。会话亲和负责主要的连续性保障；当故障转移、过期或手动路由仍然改变所选凭据时，Codex Switch Safe 作为最后一道安全保护。
 
 ## 诊断和隐私
 
@@ -155,9 +171,19 @@ CPA 插件优先级决定拦截器执行顺序。如果另一个请求拦截器�
 
 插件没有网络访问权限，也不会写入文件。它只在内存中保存路由状态，并使用随机的进程内 HMAC 密钥生成不透明项目指纹和诊断引用。这些引用无法跨 CPA 重启进行关联。
 
+### 管理状态接口
+
+CPA 管理员可以查询经过管理鉴权的接口：
+
+```text
+GET /v0/management/plugins/codex-switch-safe/status
+```
+
+JSON 响应包含插件版本与运行时间、实际生效的安全配置、当前 session/pending/tainted/overflow 状态数量，以及累计保护动作和已跟踪请求完成计数。响应不会包含原始请求 ID、会话 ID、selected-auth ID、路由指纹、请求体或加密内容。该接口注册为 Management API 路由，不会通过 CPA 未经管理鉴权的插件资源路由暴露。
+
 ## 安全模型
 
-- **稳定会话身份：** 优先使用 CPA `execution_session_id`，然后依次使用 Codex session/thread 请求头、载荷元数据和 `prompt_cache_key` 作为后备。忽略每轮独立的 ID。
+- **稳定会话身份：** 优先使用 CPA `canonical_session_id`，然后依次使用 `execution_session_id`、Codex session/thread 请求头、载荷元数据和 `prompt_cache_key` 作为后备。忽略每轮独立的 ID。
 - **路由身份：** 由 CPA `selected_auth_id`、所选模型和 `ToFormat: codex` 共同确定。
 - **感知重试的生命周期：** 一个请求 ID 只保留最新的认证后候选项，并且只有结果为 `succeeded` 时才提交路由。
 - **故障转移安全：** 失败、拒绝、取消和过期的尝试都不会推进已确认路由。
@@ -181,7 +207,7 @@ $go = 'C:\Program Files\Go\bin\go.exe'
 & $go vet ./...
 ```
 
-原生构建需要 C 编译器，因为 CPA 通过原生 ABI 加载 Go 共享库。CI 会测试插件，并根据版本标签发布 Linux、macOS 和 Windows 发行文件。
+原生构建需要 C 编译器，因为 CPA 通过原生 ABI 加载 Go 共享库。CI 会执行竞态、模糊测试、ABI 测试，以及针对 CPA `7.2.130` 和 `8.0.23` 的真实宿主兼容测试，并根据版本标签发布 Linux、macOS 和 Windows 发行文件。
 
 ## 贡献
 

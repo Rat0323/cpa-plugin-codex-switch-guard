@@ -69,6 +69,29 @@ func TestSessionKeyPrefersExecutionSessionForNestedAgents(t *testing.T) {
 	}
 }
 
+func TestSessionKeyPrefersCanonicalHostIdentity(t *testing.T) {
+	first := testSessionRequest("header-a", "thread-a", "turn-a", "caller-a")
+	second := testSessionRequest("header-b", "thread-b", "turn-b", "caller-a")
+	first.Metadata["canonical_session_id"] = "canonical-session"
+	first.Metadata["execution_session_id"] = "execution-a"
+	second.Metadata["canonical_session_id"] = "canonical-session"
+	second.Metadata["execution_session_id"] = "execution-b"
+
+	firstInspection, errFirst := inspectPayload(first.Body)
+	if errFirst != nil {
+		t.Fatal(errFirst)
+	}
+	secondInspection, errSecond := inspectPayload(second.Body)
+	if errSecond != nil {
+		t.Fatal(errSecond)
+	}
+	firstKey := sessionKeyFromRequest(first, firstInspection)
+	secondKey := sessionKeyFromRequest(second, secondInspection)
+	if firstKey == "" || firstKey != secondKey {
+		t.Fatalf("canonical session keys = %q, %q", firstKey, secondKey)
+	}
+}
+
 func TestSessionKeyNeverUsesAgentMessageContents(t *testing.T) {
 	request := testSessionRequest("session-root", "thread-root", "turn-root", "caller-a")
 	request.Body = []byte(`{"input":[{"type":"agent_message","author":"/root","recipient":"/root/worker","content":[{"type":"encrypted_content","encrypted_content":"child-private-state"}]}]}`)

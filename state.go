@@ -36,7 +36,7 @@ func newOpaqueDigestKey() []byte {
 }
 
 func routeFingerprintFromRequest(req pluginapi.RequestInterceptRequest) (routeFingerprint, bool) {
-	authID := normalizeOpaqueIdentifier(metadataString(req.Metadata, "selected_auth_id"))
+	authID := normalizeOpaqueIdentifier(metadataString(req.Metadata, selectedAuthMetadataKey))
 	model := normalizeOpaqueIdentifier(req.Model)
 	toFormat := strings.ToLower(strings.TrimSpace(req.ToFormat))
 	if authID == "" || model == "" || toFormat != "codex" {
@@ -97,16 +97,31 @@ type pendingRoute struct {
 	ObservedAt              time.Time
 	CleanStart              bool
 	CanClearTaint           bool
+	RetiredOverflow         bool
 	RetiredItemFingerprints []string
 }
 
 type routeStateStore struct {
-	mu       sync.Mutex
-	cfg      pluginConfig
-	now      func() time.Time
-	sequence uint64
-	sessions map[string]sessionRouteState
-	pending  map[string]pendingRoute
+	mu               sync.Mutex
+	cfg              pluginConfig
+	now              func() time.Time
+	nextPurge        time.Time
+	sequence         uint64
+	sessions         map[string]sessionRouteState
+	pending          map[string]pendingRoute
+	pendingBySession map[string]*pendingSessionIndex
+}
+
+type pendingSessionIndex struct {
+	Count       int
+	RouteCounts map[string]int
+}
+
+type routeStateSnapshot struct {
+	Sessions         int `json:"sessions"`
+	Pending          int `json:"pending"`
+	TaintedSessions  int `json:"tainted_sessions"`
+	OverflowSessions int `json:"overflow_sessions"`
 }
 
 func newRouteStateStore(cfg pluginConfig) *routeStateStore {
@@ -118,11 +133,34 @@ func newRouteStateStoreWithClock(cfg pluginConfig, now func() time.Time) *routeS
 		now = time.Now
 	}
 	return &routeStateStore{
-		cfg:      cfg,
-		now:      now,
-		sessions: make(map[string]sessionRouteState),
-		pending:  make(map[string]pendingRoute),
+		cfg:              cfg,
+		now:              now,
+		sessions:         make(map[string]sessionRouteState),
+		pending:          make(map[string]pendingRoute),
+		pendingBySession: make(map[string]*pendingSessionIndex),
 	}
+}
+
+func (s *routeStateStore) snapshot() routeStateSnapshot {
+	if s == nil {
+		return routeStateSnapshot{}
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.maybePurgeExpiredLocked(s.now())
+	snapshot := routeStateSnapshot{
+		Sessions: len(s.sessions),
+		Pending:  len(s.pending),
+	}
+	for _, session := range s.sessions {
+		if session.Tainted {
+			snapshot.TaintedSessions++
+		}
+		if session.RetiredOverflow {
+			snapshot.OverflowSessions++
+		}
+	}
+	return snapshot
 }
 
 // prepare records only the final selected-auth candidate for a logical request.
@@ -135,14 +173,14 @@ func (s *routeStateStore) prepare(requestID, sessionKey string, route routeFinge
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := s.now()
-	s.purgeExpiredLocked(now)
+	s.maybePurgeExpiredLocked(now)
 
 	requestID = strings.TrimSpace(requestID)
 	if requestID != "" {
 		// CPA calls the after-auth hook for each retry candidate. Replace the
 		// previous candidate for this one logical request instead of treating it
 		// as independent concurrency.
-		delete(s.pending, pendingKey(requestID))
+		s.deletePendingLocked(pendingKey(requestID))
 	}
 
 	decision := routeDecision{Relation: routeRelationUnknown}
@@ -150,19 +188,21 @@ func (s *routeStateStore) prepare(requestID, sessionKey string, route routeFinge
 	if !canTrack {
 		decision = failClosedDecision(signals, s.cfg.CompactionPolicy)
 		if decision.Strip && sessionKey != "" && requestID != "" {
+			retiredItemFingerprints, retiredOverflow := boundedUniqueFingerprints(signals.ItemFingerprints)
 			session := s.sessions[sessionKey]
 			session.UpdatedAt = now
 			s.sessions[sessionKey] = session
 			s.trimSessionsLocked()
 			s.sequence++
-			s.pending[pendingKey(requestID)] = pendingRoute{
+			s.setPendingLocked(pendingKey(requestID), pendingRoute{
 				SessionKey:              sessionKey,
 				RouteKnown:              false,
 				Sequence:                s.sequence,
 				ObservedAt:              now,
 				CleanStart:              true,
-				RetiredItemFingerprints: uniqueFingerprints(signals.ItemFingerprints),
-			}
+				RetiredOverflow:         retiredOverflow,
+				RetiredItemFingerprints: retiredItemFingerprints,
+			})
 			s.trimPendingLocked()
 		}
 		return decision
@@ -222,11 +262,12 @@ func (s *routeStateStore) prepare(requestID, sessionKey string, route routeFinge
 
 	cleanStart := decision.Strip || !signals.hasRouteBoundState()
 	var retiredItemFingerprints []string
+	var retiredOverflow bool
 	if decision.Strip {
-		retiredItemFingerprints = uniqueFingerprints(signals.ItemFingerprints)
+		retiredItemFingerprints, retiredOverflow = boundedUniqueFingerprints(signals.ItemFingerprints)
 	}
 	s.sequence++
-	s.pending[pendingKey(requestID)] = pendingRoute{
+	s.setPendingLocked(pendingKey(requestID), pendingRoute{
 		SessionKey:              sessionKey,
 		Route:                   route,
 		RouteKnown:              true,
@@ -234,8 +275,9 @@ func (s *routeStateStore) prepare(requestID, sessionKey string, route routeFinge
 		ObservedAt:              now,
 		CleanStart:              cleanStart,
 		CanClearTaint:           session.Tainted && cleanStart && !hasOtherPending,
+		RetiredOverflow:         retiredOverflow,
 		RetiredItemFingerprints: retiredItemFingerprints,
-	}
+	})
 	s.trimPendingLocked()
 	return decision
 }
@@ -254,9 +296,12 @@ func failClosedDecision(signals stateSignals, policy compactionPolicy) routeDeci
 }
 
 func (s *routeStateStore) retireItemsLocked(session sessionRouteState, fingerprints []string, route routeFingerprint, routeKnown bool, now time.Time) sessionRouteState {
-	if len(fingerprints) == 0 {
+	if session.RetiredOverflow || len(fingerprints) == 0 {
 		session.UpdatedAt = now
 		return session
+	}
+	if len(fingerprints) > maxRetiredItemFingerprintsPerSession {
+		return markRetiredOverflow(session, now)
 	}
 	if session.RetiredItems == nil {
 		session.RetiredItems = make(map[string]uint64)
@@ -275,30 +320,23 @@ func (s *routeStateStore) retireItemsLocked(session sessionRouteState, fingerpri
 		} else {
 			delete(session.RetiredItemRoute, fingerprint)
 		}
-	}
-	for len(session.RetiredItems) > maxRetiredItemFingerprintsPerSession {
-		session.RetiredOverflow = true
-		var oldestFingerprint string
-		var oldestSequence uint64
-		for fingerprint, sequence := range session.RetiredItems {
-			if oldestFingerprint == "" || sequence < oldestSequence || (sequence == oldestSequence && fingerprint < oldestFingerprint) {
-				oldestFingerprint = fingerprint
-				oldestSequence = sequence
-			}
+		if len(session.RetiredItems) > maxRetiredItemFingerprintsPerSession {
+			return markRetiredOverflow(session, now)
 		}
-		delete(session.RetiredItems, oldestFingerprint)
-		delete(session.RetiredItemRoute, oldestFingerprint)
 	}
 	session.UpdatedAt = now
 	return session
 }
 
-func uniqueFingerprints(fingerprints []string) []string {
+func boundedUniqueFingerprints(fingerprints []string) ([]string, bool) {
 	if len(fingerprints) == 0 {
-		return nil
+		return nil, false
 	}
-	unique := make([]string, 0, len(fingerprints))
-	seen := make(map[string]struct{}, len(fingerprints))
+	if len(fingerprints) > maxRetiredItemFingerprintsPerSession {
+		return nil, true
+	}
+	unique := make([]string, 0, min(len(fingerprints), maxRetiredItemFingerprintsPerSession))
+	seen := make(map[string]struct{}, min(len(fingerprints), maxRetiredItemFingerprintsPerSession))
 	for _, fingerprint := range fingerprints {
 		if fingerprint == "" {
 			continue
@@ -306,10 +344,21 @@ func uniqueFingerprints(fingerprints []string) []string {
 		if _, exists := seen[fingerprint]; exists {
 			continue
 		}
+		if len(unique) == maxRetiredItemFingerprintsPerSession {
+			return nil, true
+		}
 		seen[fingerprint] = struct{}{}
 		unique = append(unique, fingerprint)
 	}
-	return unique
+	return unique, false
+}
+
+func markRetiredOverflow(session sessionRouteState, now time.Time) sessionRouteState {
+	session.RetiredOverflow = true
+	session.RetiredItems = nil
+	session.RetiredItemRoute = nil
+	session.UpdatedAt = now
+	return session
 }
 
 func retiredItemMatches(retired map[string]uint64, retiredRoutes map[string]routeFingerprint, observed []string, route routeFingerprint) []string {
@@ -334,24 +383,24 @@ func retiredItemMatches(retired map[string]uint64, retiredRoutes map[string]rout
 	return matches
 }
 
-func (s *routeStateStore) complete(completion pluginapi.RequestCompletion) {
+func (s *routeStateStore) complete(completion pluginapi.RequestCompletion) bool {
 	if s == nil {
-		return
+		return false
 	}
 	requestID := strings.TrimSpace(completion.RequestID)
 	if requestID == "" {
-		return
+		return false
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := s.now()
-	s.purgeExpiredLocked(now)
+	s.maybePurgeExpiredLocked(now)
 	pending, exists := s.pending[pendingKey(requestID)]
 	if !exists {
-		return
+		return false
 	}
-	delete(s.pending, pendingKey(requestID))
+	s.deletePendingLocked(pendingKey(requestID))
 
 	current, existsCurrent := s.sessions[pending.SessionKey]
 	if !existsCurrent {
@@ -359,7 +408,9 @@ func (s *routeStateStore) complete(completion pluginapi.RequestCompletion) {
 	}
 
 	if completion.Outcome == pluginapi.RequestCompletionSucceeded {
-		if len(pending.RetiredItemFingerprints) > 0 {
+		if pending.RetiredOverflow {
+			current = markRetiredOverflow(current, now)
+		} else if len(pending.RetiredItemFingerprints) > 0 {
 			current = s.retireItemsLocked(current, pending.RetiredItemFingerprints, pending.Route, pending.RouteKnown, now)
 		}
 		applied := false
@@ -379,11 +430,11 @@ func (s *routeStateStore) complete(completion pluginapi.RequestCompletion) {
 		}
 		s.sessions[pending.SessionKey] = current
 		s.trimSessionsLocked()
-		return
+		return true
 	}
 
 	if !hasInvalidEncryptedContentError(completion.Error) {
-		return
+		return true
 	}
 
 	// The upstream has rejected a route-bound item despite the selected route.
@@ -397,6 +448,7 @@ func (s *routeStateStore) complete(completion pluginapi.RequestCompletion) {
 	}
 	s.sessions[pending.SessionKey] = current
 	s.trimSessionsLocked()
+	return true
 }
 
 func (s *routeStateStore) reset() {
@@ -406,8 +458,10 @@ func (s *routeStateStore) reset() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.sequence = 0
+	s.nextPurge = time.Time{}
 	s.sessions = make(map[string]sessionRouteState)
 	s.pending = make(map[string]pendingRoute)
+	s.pendingBySession = make(map[string]*pendingSessionIndex)
 }
 
 func (s *routeStateStore) discardPending(requestID string) {
@@ -416,31 +470,111 @@ func (s *routeStateStore) discardPending(requestID string) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	delete(s.pending, pendingKey(requestID))
+	s.deletePendingLocked(pendingKey(requestID))
 }
 
 func pendingKey(requestID string) string {
 	return opaqueDigest("pending-v1", strings.TrimSpace(requestID))
 }
 
+func (s *routeStateStore) setPendingLocked(key string, pending pendingRoute) {
+	if existing, exists := s.pending[key]; exists {
+		s.removePendingIndexLocked(existing)
+	}
+	s.pending[key] = pending
+	if pending.SessionKey == "" {
+		return
+	}
+	index := s.pendingBySession[pending.SessionKey]
+	if index == nil {
+		index = &pendingSessionIndex{RouteCounts: make(map[string]int)}
+		s.pendingBySession[pending.SessionKey] = index
+	}
+	index.Count++
+	index.RouteCounts[pendingRouteIndexKey(pending)]++
+}
+
+func (s *routeStateStore) deletePendingLocked(key string) (pendingRoute, bool) {
+	pending, exists := s.pending[key]
+	if !exists {
+		return pendingRoute{}, false
+	}
+	delete(s.pending, key)
+	s.removePendingIndexLocked(pending)
+	return pending, true
+}
+
+func (s *routeStateStore) removePendingIndexLocked(pending pendingRoute) {
+	index := s.pendingBySession[pending.SessionKey]
+	if index == nil {
+		return
+	}
+	index.Count--
+	routeKey := pendingRouteIndexKey(pending)
+	index.RouteCounts[routeKey]--
+	if index.RouteCounts[routeKey] <= 0 {
+		delete(index.RouteCounts, routeKey)
+	}
+	if index.Count <= 0 {
+		delete(s.pendingBySession, pending.SessionKey)
+	}
+}
+
+func pendingRouteIndexKey(pending pendingRoute) string {
+	if !pending.RouteKnown {
+		return ""
+	}
+	return pending.Route.Digest
+}
+
+func (s *routeStateStore) maybePurgeExpiredLocked(now time.Time) {
+	if !s.nextPurge.IsZero() && now.Before(s.nextPurge) {
+		return
+	}
+	interval := s.cfg.StateTTL / 16
+	if interval < time.Second {
+		interval = time.Second
+	}
+	if interval > time.Minute {
+		interval = time.Minute
+	}
+	s.nextPurge = now.Add(interval)
+	s.purgeExpiredLocked(now)
+}
+
 func (s *routeStateStore) purgeExpiredLocked(now time.Time) {
+	// Keep amortized sweeps, but never let the next sweep miss an entry's
+	// strict age > TTL boundary.
+	scheduleExpiry := func(updatedAt time.Time) {
+		deadline := updatedAt.Add(s.cfg.StateTTL).Add(time.Nanosecond)
+		if deadline.Before(s.nextPurge) {
+			s.nextPurge = deadline
+		}
+	}
 	for key, state := range s.sessions {
 		if now.Sub(state.UpdatedAt) > s.cfg.StateTTL {
 			delete(s.sessions, key)
+		} else {
+			scheduleExpiry(state.UpdatedAt)
 		}
 	}
 	for requestID, state := range s.pending {
 		if now.Sub(state.ObservedAt) > s.cfg.StateTTL {
-			delete(s.pending, requestID)
+			s.deletePendingLocked(requestID)
 			s.taintSessionLocked(state.SessionKey, now)
+		} else {
+			scheduleExpiry(state.ObservedAt)
 		}
 	}
 }
 
 func (s *routeStateStore) trimSessionsLocked() {
-	activeSessions := make(map[string]struct{})
-	for _, pending := range s.pending {
-		activeSessions[pending.SessionKey] = struct{}{}
+	if len(s.sessions) <= s.cfg.MaxSessions {
+		return
+	}
+	activeSessions := make(map[string]struct{}, len(s.pendingBySession))
+	for sessionKey := range s.pendingBySession {
+		activeSessions[sessionKey] = struct{}{}
 	}
 	for len(s.sessions) > s.cfg.MaxSessions {
 		var oldestKey string
@@ -476,7 +610,7 @@ func (s *routeStateStore) trimPendingLocked() {
 				oldest = state
 			}
 		}
-		delete(s.pending, oldestID)
+		s.deletePendingLocked(oldestID)
 		s.taintSessionLocked(oldest.SessionKey, s.now())
 	}
 }
@@ -493,21 +627,13 @@ func (s *routeStateStore) taintSessionLocked(sessionKey string, now time.Time) {
 }
 
 func (s *routeStateStore) hasConcurrentRouteMismatchLocked(sessionKey string, route routeFingerprint) bool {
-	for _, pending := range s.pending {
-		if pending.SessionKey == sessionKey && !pending.Route.equal(route) {
-			return true
-		}
-	}
-	return false
+	index := s.pendingBySession[sessionKey]
+	return index != nil && index.Count > index.RouteCounts[route.Digest]
 }
 
 func (s *routeStateStore) hasPendingForSessionLocked(sessionKey string) bool {
-	for _, pending := range s.pending {
-		if pending.SessionKey == sessionKey {
-			return true
-		}
-	}
-	return false
+	index := s.pendingBySession[sessionKey]
+	return index != nil && index.Count > 0
 }
 
 func hasInvalidEncryptedContentError(message string) bool {

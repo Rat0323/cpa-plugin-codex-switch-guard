@@ -1,0 +1,186 @@
+name: Provider state compatibility evidence
+description: Report reproducible route-bound state failures across credentials, models, or upstream providers.
+title: "[Provider State] "
+labels:
+  - provider-compatibility
+  - needs-reproduction
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        Use this form for evidence that signed, encrypted, thinking, or
+        compaction state cannot safely continue after a credential, model, or
+        provider route change. Do not submit credentials, authorization
+        headers, complete request bodies, signatures, encrypted content, or
+        conversation text. Security vulnerabilities must be reported privately
+        through the Security tab.
+
+  - type: dropdown
+    id: provider-family
+    attributes:
+      label: Provider or protocol family
+      description: Select the final upstream family involved in the failure.
+      options:
+        - Claude
+        - Gemini
+        - Antigravity (identify the final model family below)
+        - Grok / xAI
+        - Codex regression
+        - DeepSeek Harness (identify the final target format below)
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: provider-model
+    attributes:
+      label: Upstream provider and model
+      description: Include aliases or prefixes exactly as configured, but no credentials.
+      placeholder: antigravity / claude-sonnet-4-5
+    validations:
+      required: true
+
+  - type: input
+    id: plugin-version
+    attributes:
+      label: Plugin version
+      placeholder: v0.3.0 or commit SHA
+    validations:
+      required: true
+
+  - type: input
+    id: cpa-version
+    attributes:
+      label: CLIProxyAPI version
+      placeholder: 8.0.23
+    validations:
+      required: true
+
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      description: Operating system and architecture.
+      placeholder: Windows 11 amd64
+    validations:
+      required: true
+
+  - type: input
+    id: formats
+    attributes:
+      label: SourceFormat and ToFormat
+      description: Copy the privacy-safe format names from diagnostics when available.
+      placeholder: SourceFormat=claude, ToFormat=claude
+    validations:
+      required: true
+
+  - type: textarea
+    id: routing
+    attributes:
+      label: Routing and credential-switch conditions
+      description: >-
+        Describe the routing strategy, session affinity settings, retry or
+        failover event, and whether selected_auth_id changed. Replace all
+        identifiers with placeholders such as auth-A and auth-B.
+      placeholder: >-
+        Session affinity enabled; auth-A became rate-limited; CPA retried on
+        auth-B for the same session and model.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: route-switch-confidence
+    attributes:
+      label: Was a route change confirmed?
+      options:
+        - Yes, diagnostics confirm a credential or model route change
+        - Suspected, but the selected route is not visible
+        - No route change was observed
+    validations:
+      required: true
+
+  - type: textarea
+    id: same-route-control
+    attributes:
+      label: Same-route control result
+      description: >-
+        Explain whether the same continuation succeeds when retried on the
+        original credential and model. This control is essential for showing
+        that the state is route-bound.
+      placeholder: Retrying on auth-A succeeds; no signature error is returned.
+    validations:
+      required: true
+
+  - type: textarea
+    id: changed-route-result
+    attributes:
+      label: Changed-route result
+      description: Describe the result on the new credential or model, including HTTP status and stable error type.
+      placeholder: auth-B returns HTTP 400 with thinking_signature_invalid.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction steps
+      description: Provide the shortest repeatable sequence, without request content or secrets.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: reproducibility
+    attributes:
+      label: Reproducibility
+      options:
+        - Every attempt
+        - Intermittent, more than once
+        - Observed once
+    validations:
+      required: true
+
+  - type: textarea
+    id: payload-shape
+    attributes:
+      label: Sanitized state shape
+      description: >-
+        List field paths and item types only. Replace every value, signature,
+        identifier, and encrypted blob with <redacted>.
+      placeholder: |
+        messages[].content[].type = thinking
+        messages[].content[].signature = <redacted>
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Sanitized diagnostics
+      description: >-
+        Include the smallest relevant log window. Remove credentials, headers,
+        raw bodies, conversation text, signatures, encrypted content, and raw
+        identifiers.
+      render: text
+
+  - type: textarea
+    id: workaround
+    attributes:
+      label: Confirmed workaround
+      description: State whether returning to the original route, starting clean, or removing a specific state item avoids the error.
+
+  - type: checkboxes
+    id: confirmation
+    attributes:
+      label: Safety and evidence confirmation
+      options:
+        - label: I removed API keys, credentials, authorization headers, cookies, and account identifiers.
+          required: true
+        - label: I did not include complete request or response bodies, signatures, encrypted content, or conversation text.
+          required: true
+        - label: I replaced request, session, thread, credential, and route identifiers with placeholders.
+          required: true
+        - label: I tested or documented the same-route control result above.
+          required: true
+        - label: This report is not a private security vulnerability.
+          required: true

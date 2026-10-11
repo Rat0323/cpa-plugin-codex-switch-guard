@@ -1,5 +1,5 @@
 PLUGIN_NAME ?= codex-switch-safe
-VERSION ?= 0.2.3
+VERSION ?= 0.3.0
 GOOS ?= $(shell go env GOOS)
 GOARCH ?= $(shell go env GOARCH)
 GO_LDFLAGS ?= -s -w -X main.pluginVersion=$(VERSION)

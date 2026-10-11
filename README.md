@@ -169,9 +169,31 @@ default-value property. Management screens may therefore display these fields as
 blank until an override is saved. Blank or omitted fields are valid: the plugin
 applies the runtime defaults shown above.
 
+Unknown configuration fields are rejected during plugin registration. This
+turns spelling mistakes into an explicit startup error instead of silently
+falling back to a different policy.
+
 The CPA plugin priority controls interceptor order. If another request
 interceptor rewrites Codex request bodies, give Codex Switch Safe a lower
 priority so it runs afterward and performs the final safety check.
+
+### Recommended CPA routing affinity
+
+On CPA versions that provide universal session affinity, enable it to reduce
+credential switches during normal operation:
+
+```yaml
+routing:
+  strategy: round-robin
+  session-affinity: true
+  session-affinity-ttl: "4h"
+  session-affinity-subagents: true
+```
+
+Keep `routing.session-affinity-ttl` aligned with this plugin's `state_ttl`.
+Affinity is the primary continuity mechanism; Codex Switch Safe remains the
+last-line guard when failover, expiry, or manual routing still changes the
+selected credential.
 
 ## Diagnostics and privacy
 
@@ -198,11 +220,26 @@ state only in memory and uses a random process-local HMAC key for opaque item
 fingerprints and diagnostic references. References cannot be correlated across
 CPA restarts.
 
+### Management status
+
+CPA administrators can query the authenticated management route:
+
+```text
+GET /v0/management/plugins/codex-switch-safe/status
+```
+
+The JSON response reports the plugin version and uptime, effective safe
+configuration, current counts of sessions/pending/tainted/overflow state, and
+cumulative protection-action and tracked-completion counters. It contains no
+raw request IDs, session IDs, selected-auth IDs, route fingerprints, request
+bodies, or encrypted content. The route is registered as a Management API route
+and is not exposed through CPA's unauthenticated plugin resource routes.
+
 ## Safety model
 
-- **Stable session identity:** CPA `execution_session_id` first, then Codex
-  session/thread headers, payload metadata, and `prompt_cache_key` fallbacks.
-  Per-turn IDs are ignored.
+- **Stable session identity:** CPA `canonical_session_id` first, then
+  `execution_session_id`, Codex session/thread headers, payload metadata, and
+  `prompt_cache_key` fallbacks. Per-turn IDs are ignored.
 - **Route identity:** CPA `selected_auth_id`, selected model, and
   `ToFormat: codex`.
 - **Retry-aware lifecycle:** a request ID keeps only its latest after-auth
@@ -240,7 +277,8 @@ $go = 'C:\Program Files\Go\bin\go.exe'
 ```
 
 Native builds require a C compiler because CPA loads the Go shared library
-through the native ABI. CI tests the plugin and publishes Linux, macOS, and
+through the native ABI. CI runs race, fuzz, ABI, and real-host compatibility
+checks against CPA `7.2.130` and `8.0.23`, then publishes Linux, macOS, and
 Windows release assets from version tags.
 
 ## Contributing

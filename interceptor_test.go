@@ -129,6 +129,55 @@ func TestInterceptorFailClosedWithoutSelectedAuthOrSession(t *testing.T) {
 	}
 }
 
+func TestInterceptorFailClosedCompactionWithoutRouteIdentity(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		policy        string
+		removeAuth    bool
+		removeSession bool
+		wantBlocked   bool
+	}{
+		{name: "missing selected auth blocks", policy: "block", removeAuth: true, wantBlocked: true},
+		{name: "missing session blocks", policy: "block", removeSession: true, wantBlocked: true},
+		{name: "missing route and session blocks", policy: "block", removeAuth: true, removeSession: true, wantBlocked: true},
+		{name: "missing selected auth strips", policy: "strip", removeAuth: true},
+		{name: "missing session strips", policy: "strip", removeSession: true},
+		{name: "missing route and session strips", policy: "strip", removeAuth: true, removeSession: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p, errBuild := buildPlugin([]byte("compaction_policy: " + tc.policy + "\n"))
+			if errBuild != nil {
+				t.Fatal(errBuild)
+			}
+			request := codexRequest("unknown-compaction", "session-a", "thread-a", "auth-a", "gpt-5.6", `{"previous_response_id":"resp-a","input":[{"type":"compaction","encrypted_content":"opaque"},{"type":"message","role":"user","content":"continue"}]}`)
+			if tc.removeAuth {
+				delete(request.Metadata, "selected_auth_id")
+			}
+			if tc.removeSession {
+				request.Headers = nil
+			}
+
+			resp, errIntercept := p.InterceptRequestAfterAuth(nil, request)
+			if errIntercept != nil {
+				t.Fatal(errIntercept)
+			}
+			if tc.wantBlocked {
+				if !resp.Terminate || resp.StatusCode != http.StatusConflict {
+					t.Fatalf("response = %#v, want HTTP 409 termination", resp)
+				}
+				return
+			}
+			if resp.Terminate || len(resp.Body) == 0 {
+				t.Fatalf("response = %#v, want sanitized continuation", resp)
+			}
+			body := string(resp.Body)
+			if strings.Contains(body, "previous_response_id") || strings.Contains(body, `"type":"compaction"`) || !strings.Contains(body, "continue") {
+				t.Fatalf("unsafe state survived or user message was removed: %s", body)
+			}
+		})
+	}
+}
+
 func codexRequest(requestID, sessionID, threadID, authID, model, body string) pluginapi.RequestInterceptRequest {
 	return pluginapi.RequestInterceptRequest{
 		RequestID: requestID,

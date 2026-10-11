@@ -5,7 +5,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/pluginapi"
 )
 
-var pluginVersion = "0.2.3"
+var pluginVersion = "0.3.0"
 
 const pluginSchemaVersion = pluginabi.SchemaVersion
 
@@ -18,6 +18,7 @@ func buildPlugin(configYAML []byte) (*switchSafePlugin, error) {
 		cfg:         cfg,
 		state:       newRouteStateStore(cfg),
 		diagnostics: newDiagnosticReporter(cfg.Diagnostics, cfg.MaxPending, hostDiagnosticSink),
+		metrics:     newPluginMetrics(),
 	}, nil
 }
 

@@ -72,6 +72,81 @@ func TestRouteStateUsesLastSelectedAttemptForRetry(t *testing.T) {
 	}
 }
 
+func TestRouteStateDoesNotReuseExpiredSessionBetweenSweeps(t *testing.T) {
+	now := time.Date(2026, time.October, 11, 12, 0, 0, 0, time.UTC)
+	cfg := testConfig()
+	cfg.StateTTL = time.Minute
+	store := newRouteStateStoreWithClock(cfg, func() time.Time { return now })
+	route := routeFingerprint{Digest: "route-a"}
+	seedCommittedRoute(store, "session-a", route)
+
+	now = now.Add(cfg.StateTTL - time.Millisecond)
+	store.snapshot()
+	now = now.Add(2 * time.Millisecond)
+	decision := store.prepare("continuation", "session-a", route, true, stateSignals{HasCompaction: true})
+	if !decision.Reject || decision.Relation == routeRelationSame {
+		t.Fatalf("expired session remained trusted between sweeps: %#v", decision)
+	}
+}
+
+func TestRouteStateDoesNotCommitExpiredPendingBetweenSweeps(t *testing.T) {
+	now := time.Date(2026, time.October, 11, 12, 0, 0, 0, time.UTC)
+	cfg := testConfig()
+	cfg.StateTTL = time.Minute
+	store := newRouteStateStoreWithClock(cfg, func() time.Time { return now })
+	route := routeFingerprint{Digest: "route-a"}
+	store.prepare("slow", "session-a", route, true, stateSignals{})
+
+	now = now.Add(cfg.StateTTL - time.Millisecond)
+	store.snapshot()
+	now = now.Add(2 * time.Millisecond)
+	if store.complete(pluginapi.RequestCompletion{RequestID: "slow", Outcome: pluginapi.RequestCompletionSucceeded}) {
+		t.Fatal("expired pending request was committed between sweeps")
+	}
+	decision := store.prepare("continuation", "session-a", route, true, stateSignals{HasCompaction: true})
+	if !decision.Reject {
+		t.Fatalf("late success made expired state reusable: %#v", decision)
+	}
+	assertPendingSessionIndex(t, store, "session-a", 0, nil)
+}
+
+func TestRouteStatePendingIndexTracksReplacementDiscardExpiryAndTrim(t *testing.T) {
+	now := time.Date(2026, time.October, 11, 12, 0, 0, 0, time.UTC)
+	cfg := testConfig()
+	cfg.StateTTL = time.Minute
+	cfg.MaxPending = 1
+	store := newRouteStateStoreWithClock(cfg, func() time.Time { return now })
+	routeA := routeFingerprint{Digest: "route-a"}
+	routeB := routeFingerprint{Digest: "route-b"}
+
+	store.prepare("retry", "session-a", routeA, true, stateSignals{})
+	assertPendingSessionIndex(t, store, "session-a", 1, map[string]int{"route-a": 1})
+
+	store.prepare("retry", "session-a", routeB, true, stateSignals{})
+	assertPendingSessionIndex(t, store, "session-a", 1, map[string]int{"route-b": 1})
+	store.discardPending("retry")
+	assertPendingSessionIndex(t, store, "session-a", 0, nil)
+
+	store.prepare("old", "session-old", routeA, true, stateSignals{})
+	now = now.Add(2 * time.Minute)
+	store.prepare("new", "session-new", routeB, true, stateSignals{})
+	assertPendingSessionIndex(t, store, "session-old", 0, nil)
+	assertPendingSessionIndex(t, store, "session-new", 1, map[string]int{"route-b": 1})
+
+	now = now.Add(time.Second)
+	store.prepare("newer", "session-newer", routeA, true, stateSignals{})
+	assertPendingSessionIndex(t, store, "session-new", 0, nil)
+	assertPendingSessionIndex(t, store, "session-newer", 1, map[string]int{"route-a": 1})
+}
+
+func TestRouteStatePendingIndexTreatsUnknownRouteAsMismatch(t *testing.T) {
+	store := newRouteStateStore(testConfig())
+	store.setPendingLocked("unknown", pendingRoute{SessionKey: "session-a", RouteKnown: false})
+	if !store.hasConcurrentRouteMismatchLocked("session-a", routeFingerprint{Digest: "route-a"}) {
+		t.Fatal("unknown pending route did not create a conservative mismatch")
+	}
+}
+
 func TestRouteStateDoesNotRetireItemsFromFailedCandidate(t *testing.T) {
 	store := newRouteStateStore(testConfig())
 	routeA := routeFingerprint{Digest: "route-a"}
@@ -383,7 +458,7 @@ func TestRouteStateCompletionRestoresRetiredItemsAfterSessionEviction(t *testing
 	}
 }
 
-func TestRouteStateBoundsRetiredItemFingerprints(t *testing.T) {
+func TestRouteStateStopsTrackingRetiredItemFingerprintsAfterOverflow(t *testing.T) {
 	store := newRouteStateStore(testConfig())
 	seedCommittedRoute(store, "session-a", routeFingerprint{Digest: "route-a"})
 	fingerprints := make([]string, maxRetiredItemFingerprintsPerSession+1)
@@ -395,23 +470,54 @@ func TestRouteStateBoundsRetiredItemFingerprints(t *testing.T) {
 		ItemFingerprints: fingerprints,
 	})
 	store.complete(pluginapi.RequestCompletion{RequestID: "switch", Outcome: pluginapi.RequestCompletionSucceeded})
-	retired := store.sessions["session-a"].RetiredItems
-	if len(retired) != maxRetiredItemFingerprintsPerSession {
-		t.Fatalf("retired length = %d, want %d", len(retired), maxRetiredItemFingerprintsPerSession)
-	}
-	if _, exists := retired[fingerprints[0]]; exists {
-		t.Fatal("oldest retired fingerprint was not evicted")
-	}
-	if _, exists := retired[fingerprints[len(fingerprints)-1]]; !exists {
-		t.Fatal("newest retired fingerprint was evicted")
-	}
-	if !store.sessions["session-a"].RetiredOverflow {
+	state := store.sessions["session-a"]
+	if !state.RetiredOverflow {
 		t.Fatal("retired overflow marker = false, want true")
+	}
+	if len(state.RetiredItems) != 0 || len(state.RetiredItemRoute) != 0 {
+		t.Fatalf("retired fingerprints retained after overflow: items=%d routes=%d", len(state.RetiredItems), len(state.RetiredItemRoute))
 	}
 
 	conservative := store.prepare("after-overflow", "session-a", routeFingerprint{Digest: "route-b"}, true, stateSignals{HasReasoning: true, ItemFingerprints: []string{"old-item"}})
 	if !conservative.Strip || len(conservative.BlockedItemFingerprints) != 0 {
 		t.Fatalf("overflow replay decision = %#v", conservative)
+	}
+}
+
+func TestRouteStateBoundsPendingRetiredItemFingerprints(t *testing.T) {
+	store := newRouteStateStore(testConfig())
+	seedCommittedRoute(store, "session-a", routeFingerprint{Digest: "route-a"})
+	fingerprints := make([]string, maxRetiredItemFingerprintsPerSession*4)
+	for index := range fingerprints {
+		fingerprints[index] = fmt.Sprintf("item-%04d", index)
+	}
+
+	store.prepare("switch", "session-a", routeFingerprint{Digest: "route-b"}, true, stateSignals{
+		HasReasoning:     true,
+		ItemFingerprints: fingerprints,
+	})
+	pending := store.pending[pendingKey("switch")]
+	if len(pending.RetiredItemFingerprints) > maxRetiredItemFingerprintsPerSession {
+		t.Fatalf("pending retired length = %d, want at most %d", len(pending.RetiredItemFingerprints), maxRetiredItemFingerprintsPerSession)
+	}
+}
+
+func TestRouteStateTreatsOversizedDuplicateFingerprintInputAsOverflow(t *testing.T) {
+	store := newRouteStateStore(testConfig())
+	seedCommittedRoute(store, "session-a", routeFingerprint{Digest: "route-a"})
+	fingerprints := make([]string, maxRetiredItemFingerprintsPerSession+1)
+	for index := range fingerprints {
+		fingerprints[index] = "repeated-item"
+	}
+
+	store.prepare("switch", "session-a", routeFingerprint{Digest: "route-b"}, true, stateSignals{
+		HasReasoning:     true,
+		ItemFingerprints: fingerprints,
+	})
+	store.complete(pluginapi.RequestCompletion{RequestID: "switch", Outcome: pluginapi.RequestCompletionSucceeded})
+	state := store.sessions["session-a"]
+	if !state.RetiredOverflow || len(state.RetiredItems) != 0 {
+		t.Fatalf("oversized duplicate input did not enter conservative overflow state: %#v", state)
 	}
 }
 
@@ -426,4 +532,26 @@ func testConfig() pluginConfig {
 func seedCommittedRoute(store *routeStateStore, session string, route routeFingerprint) {
 	store.prepare("seed-"+session, session, route, true, stateSignals{})
 	store.complete(pluginapi.RequestCompletion{RequestID: "seed-" + session, Outcome: pluginapi.RequestCompletionSucceeded})
+}
+
+func assertPendingSessionIndex(t *testing.T, store *routeStateStore, sessionKey string, wantCount int, wantRoutes map[string]int) {
+	t.Helper()
+	index := store.pendingBySession[sessionKey]
+	if wantCount == 0 {
+		if index != nil {
+			t.Fatalf("pending index %q = %#v, want absent", sessionKey, index)
+		}
+		return
+	}
+	if index == nil || index.Count != wantCount {
+		t.Fatalf("pending index %q = %#v, want count %d", sessionKey, index, wantCount)
+	}
+	if len(index.RouteCounts) != len(wantRoutes) {
+		t.Fatalf("route counts %q = %#v, want %#v", sessionKey, index.RouteCounts, wantRoutes)
+	}
+	for route, want := range wantRoutes {
+		if index.RouteCounts[route] != want {
+			t.Fatalf("route count %q/%q = %d, want %d", sessionKey, route, index.RouteCounts[route], want)
+		}
+	}
 }

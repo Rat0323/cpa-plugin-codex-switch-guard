@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
 	"time"
@@ -35,6 +36,7 @@ const (
 
 type pluginConfig struct {
 	Enabled             bool   `yaml:"enabled"`
+	Priority            int    `yaml:"priority"`
 	StateTTLRaw         string `yaml:"state_ttl"`
 	MaxSessions         int    `yaml:"max_sessions"`
 	MaxPending          int    `yaml:"max_pending"`
@@ -59,8 +61,10 @@ func defaultPluginConfig() pluginConfig {
 
 func parsePluginConfig(raw []byte) (pluginConfig, error) {
 	cfg := defaultPluginConfig()
-	if len(strings.TrimSpace(string(raw))) > 0 {
-		if errUnmarshal := yaml.Unmarshal(raw, &cfg); errUnmarshal != nil {
+	if len(bytes.TrimSpace(raw)) > 0 {
+		decoder := yaml.NewDecoder(bytes.NewReader(raw))
+		decoder.KnownFields(true)
+		if errUnmarshal := decoder.Decode(&cfg); errUnmarshal != nil {
 			return cfg, fmt.Errorf("invalid %s config: %w", pluginID, errUnmarshal)
 		}
 	}

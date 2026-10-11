@@ -11,6 +11,7 @@ type abiRegistration struct {
 type abiCapabilities struct {
 	RequestInterceptor     bool `json:"request_interceptor"`
 	RequestLifecyclePlugin bool `json:"request_lifecycle_plugin"`
+	ManagementAPI          bool `json:"management_api"`
 }
 
 func pluginRegistration(schemaVersion uint32) abiRegistration {
@@ -20,6 +21,7 @@ func pluginRegistration(schemaVersion uint32) abiRegistration {
 		Capabilities: abiCapabilities{
 			RequestInterceptor:     true,
 			RequestLifecyclePlugin: true,
+			ManagementAPI:          true,
 		},
 	}
 }

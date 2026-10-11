@@ -12,7 +12,7 @@ import (
 const maxOpaqueIdentifierLength = 256
 
 func sessionKeyFromRequest(req pluginapi.RequestInterceptRequest, inspection payloadInspection) string {
-	callerScope := normalizeOpaqueIdentifier(metadataString(req.Metadata, "caller_scope"))
+	callerScope := normalizeOpaqueIdentifier(metadataString(req.Metadata, callerScopeMetadataKey))
 	if kind, value := requestSessionIdentity(req, inspection); value != "" {
 		return opaqueDigest("session-v1", callerScope, kind, value)
 	}
@@ -20,10 +20,14 @@ func sessionKeyFromRequest(req pluginapi.RequestInterceptRequest, inspection pay
 }
 
 func requestSessionIdentity(req pluginapi.RequestInterceptRequest, inspection payloadInspection) (string, string) {
-	// CPA assigns execution_session_id to long-lived downstream executions.
-	// It is more precise than a client header when nested agents share a root
-	// caller, so prefer it whenever the host provides it.
-	if value := normalizeOpaqueIdentifier(metadataString(req.Metadata, "execution_session_id")); value != "" {
+	// Prefer the host's reconciled identity so this plugin follows the same
+	// session boundaries as CPA routing, including forks and subagents.
+	if value := normalizeOpaqueIdentifier(metadataString(req.Metadata, canonicalSessionIDMetadataKey)); value != "" {
+		return "canonical", value
+	}
+	// Older hosts assign execution_session_id to long-lived downstream
+	// executions. It remains the best fallback when canonical identity is absent.
+	if value := normalizeOpaqueIdentifier(metadataString(req.Metadata, executionSessionMetadataKey)); value != "" {
 		return "execution", value
 	}
 	if kind, value := headerSessionIdentity(req.Headers); value != "" {
@@ -35,7 +39,7 @@ func requestSessionIdentity(req pluginapi.RequestInterceptRequest, inspection pa
 	if value := normalizedRawJSONString(inspection.Root["prompt_cache_key"]); value != "" {
 		return "payload-prompt-cache-key", value
 	}
-	if value := normalizeOpaqueIdentifier(metadataString(req.Metadata, "derived_session_id")); value != "" {
+	if value := normalizeOpaqueIdentifier(metadataString(req.Metadata, derivedSessionIDMetadataKey)); value != "" {
 		return "derived", value
 	}
 	return "", ""
