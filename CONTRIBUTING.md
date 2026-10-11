@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping improve Codex Switch Safe.
+Thanks for helping improve Codex Switch Guard.
 
 ## Before opening a change
 
