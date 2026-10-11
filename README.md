@@ -7,6 +7,15 @@
 [![License](https://img.shields.io/github/license/Rat0323/cpa-plugin-codex-switch-guard)](LICENSE)
 [![Go version](https://img.shields.io/github/go-mod/go-version/Rat0323/cpa-plugin-codex-switch-guard)](go.mod)
 
+## Repository identity
+
+- Plugin ID: `codex-switch-guard`
+- Repository: `cpa-plugin-codex-switch-guard`
+- Current release: `v1.0.0`
+- Release assets: `codex-switch-guard_<version>_<goos>_<goarch>.zip`
+- The old `cpa-plugin-codex-switch-safe` repository URL redirects to this repository.
+- Automatic upgrades from Codex Switch Safe are not supported because the plugin ID and release asset names changed.
+
 A native CLIProxyAPI (CPA) interceptor that keeps Codex credential and model
 switches safe. It preserves encrypted context on the same route and prevents
 route-bound state from crossing into a different or unknown upstream.
@@ -92,8 +101,8 @@ Requirements:
 - A release asset matching the CPA host operating system and architecture.
 - A CPA configuration with plugins enabled.
 
-Install Codex Switch Guard from CPA's plugin store, or download the appropriate
-archive from the
+Install Codex Switch Guard from CPA's plugin store once the registry update is
+merged, or download the appropriate archive now from the
 [latest release](https://github.com/Rat0323/cpa-plugin-codex-switch-guard/releases/latest).
 Each archive contains one root-level platform library:
 
@@ -278,7 +287,9 @@ encrypted state portable between credentials.
 Version `1.0.0` is the clean rename release. The plugin ID, repository, release
 assets, and documentation now use `codex-switch-guard` and
 `cpa-plugin-codex-switch-guard`. The old repository URL redirects to the new
-repository, but CPA does not automatically remove the old local plugin file.
+repository, but CPA does not automatically remove the old local plugin file,
+and the old updater does not automatically upgrade because the plugin ID and
+release asset names changed.
 Remove the old `codex-switch-safe` library before installing
 `codex-switch-guard`, rename the CPA configuration key from `codex-switch-safe`
 to `codex-switch-guard`, and do not load both libraries at the same time. The
@@ -286,6 +297,9 @@ HTTP error type is now `codex_switch_guard_reset_required`.
 
 No state migration is required. Earlier releases kept state under the old
 plugin identity, so the first `1.0.0` start creates a new state file.
+
+Earlier Codex Switch Safe releases were removed from this repository as part of
+the clean rename. The source history remains available in Git.
 
 ## Development
 

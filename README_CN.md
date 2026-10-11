@@ -7,6 +7,15 @@
 [![License](https://img.shields.io/github/license/Rat0323/cpa-plugin-codex-switch-guard)](LICENSE)
 [![Go version](https://img.shields.io/github/go-mod/go-version/Rat0323/cpa-plugin-codex-switch-guard)](go.mod)
 
+## 仓库身份
+
+- 插件 ID：`codex-switch-guard`
+- 仓库名：`cpa-plugin-codex-switch-guard`
+- 当前版本：`v1.0.0`
+- 发行资产：`codex-switch-guard_<version>_<goos>_<goarch>.zip`
+- 旧仓库 `cpa-plugin-codex-switch-safe` 的地址会重定向到本仓库。
+- Codex Switch Safe 的旧更新器不会自动升级到本插件，因为插件 ID 和发行资产名都已更换。
+
 一个让 Codex 凭据和模型切换保持安全的原生 CLIProxyAPI（CPA）拦截器。它会在同一路由上保留加密上下文，并阻止与路由绑定的状态进入不同或未知的上游。
 
 ## 为什么需要它
@@ -67,7 +76,9 @@ Codex route-bound state belongs to a different or unknown upstream credential.
 - 与 CPA 主机操作系统和架构匹配的发行文件。
 - 已在 CPA 配置中启用插件。
 
-可以从 CPA 插件市场安装，也可以从[最新发行版](https://github.com/Rat0323/cpa-plugin-codex-switch-guard/releases/latest)下载对应压缩包。每个压缩包根目录包含一个平台库文件：
+待插件市场注册表更新合并后，可以从 CPA 插件市场安装；当前也可以直接从
+[最新发行版](https://github.com/Rat0323/cpa-plugin-codex-switch-guard/releases/latest)
+下载对应压缩包。每个压缩包根目录包含一个平台库文件：
 
 | 平台 | 架构 | 库文件 |
 | --- | --- | --- |
@@ -192,12 +203,15 @@ CPA 插件优先级决定拦截器执行顺序。如果另一个请求拦截器�
 
 `1.0.0` 是正式切换新身份的版本。插件 ID、仓库名、发行资产和文档都统一为
 `codex-switch-guard` / `cpa-plugin-codex-switch-guard`。旧仓库地址会重定向到新仓库，
-但 CPA 不会自动删除本地旧插件文件。安装 `codex-switch-guard` 前，应从 CPA 插件目录
+但 CPA 不会自动删除本地旧插件文件，旧更新器也不会自动升级，因为插件 ID 和发行资产名
+都已更换。安装 `codex-switch-guard` 前，应从 CPA 插件目录
 删除旧的 `codex-switch-safe` 库，并把配置键从 `codex-switch-safe` 改为
 `codex-switch-guard`，不要同时加载两个库。HTTP 错误类型同步改为
 `codex_switch_guard_reset_required`。
 
 不需要迁移状态。早期版本按旧插件身份保存状态，`1.0.0` 首次启动时会创建新的状态文件。
+
+早期 Codex Switch Safe 发行版已在这次干净改名中从本仓库移除，源码历史仍保留在 Git 中。
 
 ## 开发
 
