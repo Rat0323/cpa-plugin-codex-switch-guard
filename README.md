@@ -169,6 +169,10 @@ default-value property. Management screens may therefore display these fields as
 blank until an override is saved. Blank or omitted fields are valid: the plugin
 applies the runtime defaults shown above.
 
+Unknown configuration fields are rejected during plugin registration. This
+turns spelling mistakes into an explicit startup error instead of silently
+falling back to a different policy.
+
 The CPA plugin priority controls interceptor order. If another request
 interceptor rewrites Codex request bodies, give Codex Switch Safe a lower
 priority so it runs afterward and performs the final safety check.
