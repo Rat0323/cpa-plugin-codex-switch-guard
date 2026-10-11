@@ -82,7 +82,7 @@ def smoke(host: pathlib.Path, plugin: pathlib.Path, timeout: float) -> dict:
         plugin_dir = work_dir / "plugins"
         auth_dir.mkdir()
         plugin_dir.mkdir()
-        installed_plugin = plugin_dir / plugin.name
+        installed_plugin = plugin_dir / f"codex-switch-safe{plugin.suffix}"
         shutil.copy2(plugin, installed_plugin)
         config = work_dir / "config.yaml"
         port = free_port()
