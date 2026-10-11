@@ -222,6 +222,26 @@ func TestPersistentRouteStateFailsClosedWhenKeyIsMissing(t *testing.T) {
 	}
 }
 
+func TestPersistentStatusErrorDoesNotLeakStateFilePath(t *testing.T) {
+	root := t.TempDir()
+	cfg := persistentTestConfig(root)
+	if errMkdir := os.Mkdir(cfg.StateFile, 0o700); errMkdir != nil {
+		t.Fatal(errMkdir)
+	}
+	now := time.Date(2026, time.October, 11, 21, 0, 0, 0, time.UTC)
+	store := newPersistentRouteStateStoreWithRoot(cfg, root, func() time.Time { return now })
+	seedCommittedRoute(store, persistentTestSession(), persistentTestRoute())
+	store.stopPersistence()
+
+	status := store.persistenceStatus()
+	if !status.Enabled || status.Healthy || status.LastError == "" {
+		t.Fatalf("persistence status = %#v, want enabled, unhealthy, and an error", status)
+	}
+	if strings.Contains(status.LastError, cfg.StateFile) || strings.Contains(status.LastError, root) {
+		t.Fatalf("persistence error leaked a path: %q", status.LastError)
+	}
+}
+
 func persistentTestConfig(root string) pluginConfig {
 	cfg := testConfig()
 	cfg.PersistenceEnabled = true

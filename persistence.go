@@ -428,13 +428,39 @@ func (s *routeStateStore) persistenceStatus() persistenceStatusSnapshot {
 		LastSavedAt: s.lastSavedAt,
 	}
 	if s.persistenceWarning != nil && s.lastPersistenceError != nil {
-		status.LastError = errors.Join(s.persistenceWarning, s.lastPersistenceError).Error()
+		status.LastError = safePersistenceErrorMessage(errors.Join(s.persistenceWarning, s.lastPersistenceError))
 	} else if s.persistenceWarning != nil {
-		status.LastError = s.persistenceWarning.Error()
+		status.LastError = safePersistenceErrorMessage(s.persistenceWarning)
 	} else if s.lastPersistenceError != nil {
-		status.LastError = s.lastPersistenceError.Error()
+		status.LastError = safePersistenceErrorMessage(s.lastPersistenceError)
 	}
 	return status
+}
+
+func safePersistenceErrorMessage(err error) string {
+	if err == nil {
+		return ""
+	}
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		return "state key or state file not found"
+	case errors.Is(err, os.ErrPermission):
+		return "state file permission denied"
+	case strings.Contains(err.Error(), "state integrity check failed"):
+		return "state integrity check failed"
+	case strings.Contains(err.Error(), "unsupported state version"):
+		return "unsupported state version"
+	case strings.Contains(err.Error(), "state file exceeds"):
+		return "state file too large"
+	case strings.Contains(err.Error(), "must be a regular file"):
+		return "state file must be a regular file"
+	case strings.Contains(err.Error(), "permissions must not allow"):
+		return "state file permissions are too broad"
+	case strings.Contains(err.Error(), "invalid state"):
+		return "invalid persistent state"
+	default:
+		return "persistence unavailable"
+	}
 }
 
 func derivePersistenceKey(master []byte, domain string) []byte {

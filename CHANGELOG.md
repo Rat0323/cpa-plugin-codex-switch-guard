@@ -25,9 +25,10 @@ matching version section verbatim.
   content, raw session IDs, auth IDs, model names, or conversation text.
 - Stored state uses a separate random 32-byte key file, domain-separated
   fingerprint and integrity keys, strict schema validation, TTL expiry, and an
-  integrity MAC. Writes are coalesced, flushed, and atomically renamed. Missing,
-  damaged, tampered, oversized, or unreadable state fails closed to conservative
-  unknown-route handling; persistence errors never weaken route protection.
+  integrity MAC. Writes are coalesced, flushed, and atomically renamed. A missing
+  key, or damaged, tampered, oversized, or unreadable state, fails closed to
+  conservative unknown-route handling; persistence errors never weaken route
+  protection.
 
 ### Compatibility and upgrade
 
