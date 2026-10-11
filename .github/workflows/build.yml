@@ -122,6 +122,14 @@ jobs:
             -ldflags "-s -w -X main.pluginVersion=${VERSION}" \
             -o "dist/${LIB_NAME}" .
           rm -f "dist/${PLUGIN_ID}.h"
+      - name: Smoke-test native ABI
+        run: |
+          if command -v python3 >/dev/null 2>&1; then
+            PYTHON=python3
+          else
+            PYTHON=python
+          fi
+          "${PYTHON}" .github/scripts/abi-smoke.py "dist/${LIB_NAME}"
       - name: Package
         run: >-
           go run ./.github/scripts/package-release.go
