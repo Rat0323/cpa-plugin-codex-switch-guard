@@ -15,8 +15,20 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/pluginapi"
 )
 
+func privateStateDir(t *testing.T) string {
+	t.Helper()
+	dir, errMkdir := os.MkdirTemp(t.TempDir(), "state-*")
+	if errMkdir != nil {
+		t.Fatal(errMkdir)
+	}
+	if errChmod := os.Chmod(dir, 0o700); errChmod != nil {
+		t.Fatal(errChmod)
+	}
+	return dir
+}
+
 func TestPluginUsesPersistedDigesterAcrossRestart(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "route-state.json")
+	path := filepath.Join(privateStateDir(t), "route-state.json")
 	config := []byte(fmt.Sprintf("persistence_enabled: true\ncompaction_policy: strip\nstate_file: '%s'\n", strings.ReplaceAll(path, "'", "''")))
 
 	first, errBuild := buildPlugin(config)
@@ -52,7 +64,7 @@ func TestPluginUsesPersistedDigesterAcrossRestart(t *testing.T) {
 }
 
 func TestPluginSanitizesRetiredItemsWithPersistedDigesterAfterRestart(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "route-state.json")
+	path := filepath.Join(privateStateDir(t), "route-state.json")
 	config := []byte(fmt.Sprintf("persistence_enabled: true\ncompaction_policy: strip\nstate_file: '%s'\n", strings.ReplaceAll(path, "'", "''")))
 	persistedDigester := newOpaqueDigester([]byte("01234567890123456789012345678901"))
 	now := time.Now().UTC()
@@ -100,7 +112,7 @@ func TestPluginSanitizesRetiredItemsWithPersistedDigesterAfterRestart(t *testing
 
 func TestPersistentRouteStateSurvivesRestartWithoutRawIdentifiers(t *testing.T) {
 	now := time.Date(2026, time.September, 14, 8, 0, 0, 0, time.UTC)
-	path := filepath.Join(t.TempDir(), "route-state.json")
+	path := filepath.Join(privateStateDir(t), "route-state.json")
 	cfg := testConfig()
 	cfg.PersistenceEnabled = true
 	cfg.StateFile = path
@@ -138,7 +150,7 @@ func TestPersistentRouteStateSurvivesRestartWithoutRawIdentifiers(t *testing.T) 
 
 func TestPersistentRouteStateDoesNotCommitFailedCandidate(t *testing.T) {
 	now := time.Date(2026, time.September, 14, 8, 0, 0, 0, time.UTC)
-	path := filepath.Join(t.TempDir(), "route-state.json")
+	path := filepath.Join(privateStateDir(t), "route-state.json")
 	cfg := testConfig()
 	cfg.PersistenceEnabled = true
 	cfg.StateFile = path
@@ -167,7 +179,7 @@ func TestPersistentRouteStateDoesNotCommitFailedCandidate(t *testing.T) {
 
 func TestPersistentRouteStateDropsExpiredAndCorruptState(t *testing.T) {
 	now := time.Date(2026, time.September, 14, 8, 0, 0, 0, time.UTC)
-	path := filepath.Join(t.TempDir(), "route-state.json")
+	path := filepath.Join(privateStateDir(t), "route-state.json")
 	cfg := testConfig()
 	cfg.StateTTL = time.Minute
 	cfg.PersistenceEnabled = true
@@ -206,7 +218,7 @@ func TestPersistentRouteStateDropsExpiredAndCorruptState(t *testing.T) {
 
 func TestPersistentRouteStateKeepsConcurrentTaintAcrossRestart(t *testing.T) {
 	now := time.Date(2026, time.September, 14, 8, 0, 0, 0, time.UTC)
-	path := filepath.Join(t.TempDir(), "route-state.json")
+	path := filepath.Join(privateStateDir(t), "route-state.json")
 	cfg := testConfig()
 	cfg.PersistenceEnabled = true
 	cfg.StateFile = path

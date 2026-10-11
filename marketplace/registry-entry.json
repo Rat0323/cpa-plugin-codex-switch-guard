@@ -4,7 +4,7 @@
   "description": "Guards Codex route-bound reasoning and compaction state when CPA switches credentials or models; block mode rejects unsafe removals before forwarding.",
   "author": "Rat0323",
   "repository": "https://github.com/Rat0323/cpa-plugin-codex-switch-guard",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "homepage": "https://github.com/Rat0323/cpa-plugin-codex-switch-guard",
   "license": "MIT",
   "tags": ["Interceptor", "Security", "Codex", "Responses"]

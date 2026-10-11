@@ -4,7 +4,7 @@ All notable user-facing changes to Codex Switch Guard are documented here.
 The project follows semantic versioning, and release automation publishes the
 matching version section verbatim.
 
-## [0.5.0] - 2026-10-12
+## [0.5.1] - 2026-10-12
 
 ### Added
 
@@ -194,8 +194,8 @@ Full diff: [v0.2.0...v0.2.1](https://github.com/Rat0323/cpa-plugin-codex-switch-
 Initial release. This version is deprecated because retry and session edge cases
 were corrected in `v0.1.1`.
 
-[Unreleased]: https://github.com/Rat0323/cpa-plugin-codex-switch-guard/compare/v0.5.0...HEAD
-[0.5.0]: https://github.com/Rat0323/cpa-plugin-codex-switch-guard/compare/v0.4.0...v0.5.0
+[Unreleased]: https://github.com/Rat0323/cpa-plugin-codex-switch-guard/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/Rat0323/cpa-plugin-codex-switch-guard/compare/v0.5.0...v0.5.1
 [0.3.0]: https://github.com/Rat0323/cpa-plugin-codex-switch-guard/compare/v0.2.3...v0.3.0
 [0.2.3]: https://github.com/Rat0323/cpa-plugin-codex-switch-guard/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/Rat0323/cpa-plugin-codex-switch-guard/compare/v0.2.1...v0.2.2
