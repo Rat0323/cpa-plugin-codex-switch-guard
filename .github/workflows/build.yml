@@ -66,6 +66,46 @@ jobs:
       - name: Vet
         run: go vet ./...
 
+  host-compatibility:
+    needs: [changes, test]
+    if: needs.changes.outputs.native_builds == 'true'
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        cpa-version: ["7.2.130", "8.0.23"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Build Linux plugin
+        run: |
+          mkdir -p dist
+          CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
+            go build -trimpath -buildmode=c-shared \
+            -ldflags "-s -w -X main.pluginVersion=0.0.0-host-smoke" \
+            -o "dist/${PLUGIN_ID}.so" .
+          rm -f "dist/${PLUGIN_ID}.h"
+      - name: Download and verify CPA release
+        env:
+          CPA_VERSION: ${{ matrix.cpa-version }}
+        run: |
+          archive="CLIProxyAPI_${CPA_VERSION}_linux_amd64.tar.gz"
+          base_url="https://github.com/router-for-me/CLIProxyAPI/releases/download/v${CPA_VERSION}"
+          mkdir -p host
+          curl --fail --location --retry 3 --output "host/${archive}" "${base_url}/${archive}"
+          curl --fail --location --retry 3 --output host/checksums.txt "${base_url}/checksums.txt"
+          grep -F "  ${archive}" host/checksums.txt | (cd host && sha256sum --check -)
+          tar -xzf "host/${archive}" -C host cli-proxy-api
+          chmod +x host/cli-proxy-api
+      - name: Load plugin in CPA host
+        run: >-
+          python3 .github/scripts/host-smoke.py
+          --host host/cli-proxy-api
+          --plugin "dist/${PLUGIN_ID}.so"
+
   build:
     needs: [changes, test]
     if: needs.changes.outputs.native_builds == 'true'
@@ -208,7 +248,7 @@ jobs:
 
   ci:
     if: always()
-    needs: [changes, test, build, build-windows-arm64]
+    needs: [changes, test, host-compatibility, build, build-windows-arm64]
     runs-on: ubuntu-24.04
     steps:
       - name: Verify required jobs
@@ -216,15 +256,18 @@ jobs:
           CHANGES_RESULT: ${{ needs.changes.result }}
           NATIVE_BUILDS: ${{ needs.changes.outputs.native_builds }}
           TEST_RESULT: ${{ needs.test.result }}
+          HOST_COMPATIBILITY_RESULT: ${{ needs.host-compatibility.result }}
           BUILD_RESULT: ${{ needs.build.result }}
           WINDOWS_ARM64_RESULT: ${{ needs.build-windows-arm64.result }}
         run: |
           test "${CHANGES_RESULT}" = "success"
           test "${TEST_RESULT}" = "success"
           if [[ "${NATIVE_BUILDS}" == "true" ]]; then
+            test "${HOST_COMPATIBILITY_RESULT}" = "success"
             test "${BUILD_RESULT}" = "success"
             test "${WINDOWS_ARM64_RESULT}" = "success"
           else
+            test "${HOST_COMPATIBILITY_RESULT}" = "skipped"
             test "${BUILD_RESULT}" = "skipped"
             test "${WINDOWS_ARM64_RESULT}" = "skipped"
           fi
