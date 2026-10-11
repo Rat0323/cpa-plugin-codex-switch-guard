@@ -100,8 +100,8 @@ func TestManagementStatusRejectsNonGET(t *testing.T) {
 }
 
 func TestManagementStatusReportsPersistenceHealthWithoutPath(t *testing.T) {
-	stateFile := filepath.Join(t.TempDir(), "route-state-v1.json")
-	config := fmt.Sprintf("enabled: true\npersistence_enabled: true\nstate_file: %q\n", filepath.ToSlash(stateFile))
+	cfg := persistentTestConfig(t, t.TempDir())
+	config := fmt.Sprintf("enabled: true\npersistence_enabled: true\nstate_file: %q\n", filepath.ToSlash(cfg.StateFile))
 	p, errBuild := buildPlugin([]byte(config))
 	if errBuild != nil {
 		t.Fatal(errBuild)
@@ -119,7 +119,7 @@ func TestManagementStatusReportsPersistenceHealthWithoutPath(t *testing.T) {
 	if !status.Config.PersistenceEnabled || !status.Persistence.Enabled || !status.Persistence.Healthy {
 		t.Fatalf("persistence status = %#v", status.Persistence)
 	}
-	if bytes.Contains(response.Body, []byte(stateFile)) || bytes.Contains(response.Body, []byte(filepath.ToSlash(stateFile))) {
+	if bytes.Contains(response.Body, []byte(cfg.StateFile)) || bytes.Contains(response.Body, []byte(filepath.ToSlash(cfg.StateFile))) {
 		t.Fatalf("status leaked state file path: %s", response.Body)
 	}
 }

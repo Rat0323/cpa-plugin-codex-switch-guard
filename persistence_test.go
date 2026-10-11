@@ -13,7 +13,7 @@ import (
 
 func TestPersistentRouteStateSurvivesRestartOnSameRoute(t *testing.T) {
 	root := t.TempDir()
-	cfg := persistentTestConfig(root)
+	cfg := persistentTestConfig(t, root)
 	now := time.Date(2026, time.October, 11, 21, 0, 0, 0, time.UTC)
 	store := newPersistentRouteStateStoreWithRoot(cfg, root, func() time.Time { return now })
 	defer store.stopPersistence()
@@ -52,7 +52,7 @@ func TestPersistentRouteStateSurvivesRestartOnSameRoute(t *testing.T) {
 
 func TestPersistentRouteStateDoesNotRestorePendingRequests(t *testing.T) {
 	root := t.TempDir()
-	cfg := persistentTestConfig(root)
+	cfg := persistentTestConfig(t, root)
 	now := time.Date(2026, time.October, 11, 21, 0, 0, 0, time.UTC)
 	store := newPersistentRouteStateStoreWithRoot(cfg, root, func() time.Time { return now })
 
@@ -79,7 +79,7 @@ func TestPersistentRouteStateDoesNotRestorePendingRequests(t *testing.T) {
 
 func TestPersistentRouteStateCoalescesSavesWithoutShutdown(t *testing.T) {
 	root := t.TempDir()
-	cfg := persistentTestConfig(root)
+	cfg := persistentTestConfig(t, root)
 	now := time.Date(2026, time.October, 11, 21, 0, 0, 0, time.UTC)
 	store := newPersistentRouteStateStoreWithRootAndDebounce(cfg, root, func() time.Time { return now }, time.Millisecond)
 	defer store.stopPersistence()
@@ -112,7 +112,7 @@ func TestPersistentRouteStateCoalescesSavesWithoutShutdown(t *testing.T) {
 
 func TestPersistentRouteStateExpiresOldSessionsOnLoad(t *testing.T) {
 	root := t.TempDir()
-	cfg := persistentTestConfig(root)
+	cfg := persistentTestConfig(t, root)
 	now := time.Date(2026, time.October, 11, 21, 0, 0, 0, time.UTC)
 	store := newPersistentRouteStateStoreWithRoot(cfg, root, func() time.Time { return now })
 	route := persistentTestRoute()
@@ -130,7 +130,7 @@ func TestPersistentRouteStateExpiresOldSessionsOnLoad(t *testing.T) {
 
 func TestPersistentRouteStateFailsClosedWhenTampered(t *testing.T) {
 	root := t.TempDir()
-	cfg := persistentTestConfig(root)
+	cfg := persistentTestConfig(t, root)
 	now := time.Date(2026, time.October, 11, 21, 0, 0, 0, time.UTC)
 	store := newPersistentRouteStateStoreWithRoot(cfg, root, func() time.Time { return now })
 	route := persistentTestRoute()
@@ -164,7 +164,7 @@ func TestPersistentRouteStateFailsClosedWhenTampered(t *testing.T) {
 
 func TestPersistentStateFileAndKeyContainOnlyOpaqueData(t *testing.T) {
 	root := t.TempDir()
-	cfg := persistentTestConfig(root)
+	cfg := persistentTestConfig(t, root)
 	now := time.Date(2026, time.October, 11, 21, 0, 0, 0, time.UTC)
 	store := newPersistentRouteStateStoreWithRoot(cfg, root, func() time.Time { return now })
 
@@ -199,7 +199,7 @@ func TestPersistentStateFileAndKeyContainOnlyOpaqueData(t *testing.T) {
 
 func TestPersistentRouteStateFailsClosedWhenKeyIsMissing(t *testing.T) {
 	root := t.TempDir()
-	cfg := persistentTestConfig(root)
+	cfg := persistentTestConfig(t, root)
 	now := time.Date(2026, time.October, 11, 21, 0, 0, 0, time.UTC)
 	store := newPersistentRouteStateStoreWithRoot(cfg, root, func() time.Time { return now })
 	route := persistentTestRoute()
@@ -224,7 +224,7 @@ func TestPersistentRouteStateFailsClosedWhenKeyIsMissing(t *testing.T) {
 
 func TestPersistentStatusErrorDoesNotLeakStateFilePath(t *testing.T) {
 	root := t.TempDir()
-	cfg := persistentTestConfig(root)
+	cfg := persistentTestConfig(t, root)
 	if errMkdir := os.Mkdir(cfg.StateFile, 0o700); errMkdir != nil {
 		t.Fatal(errMkdir)
 	}
@@ -242,10 +242,15 @@ func TestPersistentStatusErrorDoesNotLeakStateFilePath(t *testing.T) {
 	}
 }
 
-func persistentTestConfig(root string) pluginConfig {
+func persistentTestConfig(t *testing.T, root string) pluginConfig {
+	t.Helper()
+	stateDir := filepath.Join(root, "state")
+	if errMkdir := os.Mkdir(stateDir, 0o700); errMkdir != nil && !os.IsExist(errMkdir) {
+		t.Fatal(errMkdir)
+	}
 	cfg := testConfig()
 	cfg.PersistenceEnabled = true
-	cfg.StateFile = filepath.Join(root, "route-state-v1.json")
+	cfg.StateFile = filepath.Join(stateDir, "route-state-v1.json")
 	return cfg
 }
 
