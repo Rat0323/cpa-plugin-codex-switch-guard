@@ -171,6 +171,16 @@ routing:
 
 插件没有网络访问权限，也不会写入文件。它只在内存中保存路由状态，并使用随机的进程内 HMAC 密钥生成不透明项目指纹和诊断引用。这些引用无法跨 CPA 重启进行关联。
 
+### 管理状态接口
+
+CPA 管理员可以查询经过管理鉴权的接口：
+
+```text
+GET /v0/management/plugins/codex-switch-safe/status
+```
+
+JSON 响应包含插件版本与运行时间、实际生效的安全配置、当前 session/pending/tainted/overflow 状态数量，以及累计保护动作和已跟踪请求完成计数。响应不会包含原始请求 ID、会话 ID、selected-auth ID、路由指纹、请求体或加密内容。该接口注册为 Management API 路由，不会通过 CPA 未经管理鉴权的插件资源路由暴露。
+
 ## 安全模型
 
 - **稳定会话身份：** 优先使用 CPA `canonical_session_id`，然后依次使用 `execution_session_id`、Codex session/thread 请求头、载荷元数据和 `prompt_cache_key` 作为后备。忽略每轮独立的 ID。
@@ -197,7 +207,7 @@ $go = 'C:\Program Files\Go\bin\go.exe'
 & $go vet ./...
 ```
 
-原生构建需要 C 编译器，因为 CPA 通过原生 ABI 加载 Go 共享库。CI 会测试插件，并根据版本标签发布 Linux、macOS 和 Windows 发行文件。
+原生构建需要 C 编译器，因为 CPA 通过原生 ABI 加载 Go 共享库。CI 会执行竞态、模糊测试、ABI 测试，以及针对 CPA `7.2.130` 和 `8.0.23` 的真实宿主兼容测试，并根据版本标签发布 Linux、macOS 和 Windows 发行文件。
 
 ## 贡献
 

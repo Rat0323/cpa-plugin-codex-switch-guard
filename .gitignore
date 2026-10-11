@@ -9,3 +9,5 @@ smoke/plugins/
 *.zip
 *.sha256
 checksums.txt
+__pycache__/
+*.pyc

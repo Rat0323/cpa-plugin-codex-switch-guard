@@ -11,6 +11,15 @@ matching version section verbatim.
 - Added native-library smoke coverage that loads every platform build and
   exercises registration, interception, completion, buffer release, and
   shutdown through the exported CPA ABI before packaging.
+- Added the authenticated
+  `GET /v0/management/plugins/codex-switch-safe/status` endpoint with
+  privacy-safe protection counters, bounded-state gauges, effective settings,
+  uptime, and plugin version.
+- Added release-host integration coverage against the minimum supported CPA
+  `7.2.130` and current CPA `8.0.23`, including official checksum verification,
+  native plugin loading, registration, and management-route execution.
+- Added continuous fuzzing for payload sanitization, selective retired-item
+  removal, session identity derivation, and pending-state index invariants.
 
 ### Changed
 
@@ -19,6 +28,8 @@ matching version section verbatim.
   existing fallbacks for older hosts.
 - Documented CPA universal session affinity as the primary continuity layer,
   with this plugin acting as the last-line route-state guard.
+- Indexed pending state by session and route, and amortized expiry sweeps, so
+  request decisions no longer scan every in-flight request on the hot path.
 
 ### Fixed
 
@@ -27,6 +38,8 @@ matching version section verbatim.
   lock.
 - Rejected unknown plugin configuration fields instead of silently accepting
   misspelled policy names.
+- Accepted CPA's host-owned `priority` runtime field while retaining strict
+  validation for unknown plugin configuration fields.
 
 ### Tests
 

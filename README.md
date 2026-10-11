@@ -220,6 +220,21 @@ state only in memory and uses a random process-local HMAC key for opaque item
 fingerprints and diagnostic references. References cannot be correlated across
 CPA restarts.
 
+### Management status
+
+CPA administrators can query the authenticated management route:
+
+```text
+GET /v0/management/plugins/codex-switch-safe/status
+```
+
+The JSON response reports the plugin version and uptime, effective safe
+configuration, current counts of sessions/pending/tainted/overflow state, and
+cumulative protection-action and tracked-completion counters. It contains no
+raw request IDs, session IDs, selected-auth IDs, route fingerprints, request
+bodies, or encrypted content. The route is registered as a Management API route
+and is not exposed through CPA's unauthenticated plugin resource routes.
+
 ## Safety model
 
 - **Stable session identity:** CPA `canonical_session_id` first, then
@@ -262,7 +277,8 @@ $go = 'C:\Program Files\Go\bin\go.exe'
 ```
 
 Native builds require a C compiler because CPA loads the Go shared library
-through the native ABI. CI tests the plugin and publishes Linux, macOS, and
+through the native ABI. CI runs race, fuzz, ABI, and real-host compatibility
+checks against CPA `7.2.130` and `8.0.23`, then publishes Linux, macOS, and
 Windows release assets from version tags.
 
 ## Contributing
