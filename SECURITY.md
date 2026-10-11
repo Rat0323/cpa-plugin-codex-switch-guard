@@ -6,12 +6,12 @@ Only the latest release line receives security fixes.
 
 | Version | Supported |
 | --- | --- |
-| `0.3.x` | Yes |
-| `< 0.3` | No |
+| `1.0.x` | Yes |
+| `< 1.0` | No |
 
 ## Reporting a vulnerability
 
-Use [GitHub private vulnerability reporting](https://github.com/Rat0323/cpa-plugin-codex-switch-safe/security/advisories/new)
+Use [GitHub private vulnerability reporting](https://github.com/Rat0323/cpa-plugin-codex-switch-guard/security/advisories/new)
 for security-sensitive findings.
 
 Do not open a public issue containing credentials, authorization headers, raw
