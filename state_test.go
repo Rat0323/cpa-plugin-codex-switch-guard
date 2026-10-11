@@ -72,6 +72,44 @@ func TestRouteStateUsesLastSelectedAttemptForRetry(t *testing.T) {
 	}
 }
 
+func TestRouteStateDoesNotReuseExpiredSessionBetweenSweeps(t *testing.T) {
+	now := time.Date(2026, time.October, 11, 12, 0, 0, 0, time.UTC)
+	cfg := testConfig()
+	cfg.StateTTL = time.Minute
+	store := newRouteStateStoreWithClock(cfg, func() time.Time { return now })
+	route := routeFingerprint{Digest: "route-a"}
+	seedCommittedRoute(store, "session-a", route)
+
+	now = now.Add(cfg.StateTTL - time.Millisecond)
+	store.snapshot()
+	now = now.Add(2 * time.Millisecond)
+	decision := store.prepare("continuation", "session-a", route, true, stateSignals{HasCompaction: true})
+	if !decision.Reject || decision.Relation == routeRelationSame {
+		t.Fatalf("expired session remained trusted between sweeps: %#v", decision)
+	}
+}
+
+func TestRouteStateDoesNotCommitExpiredPendingBetweenSweeps(t *testing.T) {
+	now := time.Date(2026, time.October, 11, 12, 0, 0, 0, time.UTC)
+	cfg := testConfig()
+	cfg.StateTTL = time.Minute
+	store := newRouteStateStoreWithClock(cfg, func() time.Time { return now })
+	route := routeFingerprint{Digest: "route-a"}
+	store.prepare("slow", "session-a", route, true, stateSignals{})
+
+	now = now.Add(cfg.StateTTL - time.Millisecond)
+	store.snapshot()
+	now = now.Add(2 * time.Millisecond)
+	if store.complete(pluginapi.RequestCompletion{RequestID: "slow", Outcome: pluginapi.RequestCompletionSucceeded}) {
+		t.Fatal("expired pending request was committed between sweeps")
+	}
+	decision := store.prepare("continuation", "session-a", route, true, stateSignals{HasCompaction: true})
+	if !decision.Reject {
+		t.Fatalf("late success made expired state reusable: %#v", decision)
+	}
+	assertPendingSessionIndex(t, store, "session-a", 0, nil)
+}
+
 func TestRouteStatePendingIndexTracksReplacementDiscardExpiryAndTrim(t *testing.T) {
 	now := time.Date(2026, time.October, 11, 12, 0, 0, 0, time.UTC)
 	cfg := testConfig()

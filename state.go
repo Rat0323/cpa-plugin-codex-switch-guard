@@ -531,7 +531,6 @@ func (s *routeStateStore) maybePurgeExpiredLocked(now time.Time) {
 	if !s.nextPurge.IsZero() && now.Before(s.nextPurge) {
 		return
 	}
-	s.purgeExpiredLocked(now)
 	interval := s.cfg.StateTTL / 16
 	if interval < time.Second {
 		interval = time.Second
@@ -540,18 +539,31 @@ func (s *routeStateStore) maybePurgeExpiredLocked(now time.Time) {
 		interval = time.Minute
 	}
 	s.nextPurge = now.Add(interval)
+	s.purgeExpiredLocked(now)
 }
 
 func (s *routeStateStore) purgeExpiredLocked(now time.Time) {
+	// Keep amortized sweeps, but never let the next sweep miss an entry's
+	// strict age > TTL boundary.
+	scheduleExpiry := func(updatedAt time.Time) {
+		deadline := updatedAt.Add(s.cfg.StateTTL).Add(time.Nanosecond)
+		if deadline.Before(s.nextPurge) {
+			s.nextPurge = deadline
+		}
+	}
 	for key, state := range s.sessions {
 		if now.Sub(state.UpdatedAt) > s.cfg.StateTTL {
 			delete(s.sessions, key)
+		} else {
+			scheduleExpiry(state.UpdatedAt)
 		}
 	}
 	for requestID, state := range s.pending {
 		if now.Sub(state.ObservedAt) > s.cfg.StateTTL {
 			s.deletePendingLocked(requestID)
 			s.taintSessionLocked(state.SessionKey, now)
+		} else {
+			scheduleExpiry(state.ObservedAt)
 		}
 	}
 }

@@ -33,6 +33,8 @@ matching version section verbatim.
 
 ### Fixed
 
+- Kept session and pending-request TTL enforcement exact between amortized
+  expiry sweeps, preventing expired state reuse and late-success route commits.
 - Bounded retired-item fingerprint processing under overflow so crafted large
   requests cannot trigger quadratic eviction while holding the global state
   lock.
